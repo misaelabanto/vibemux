@@ -76,7 +76,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.loadEntries()
 			}
 		case "enter":
-			m.selectedPath = m.currentDir
+			if len(m.entries) > 0 {
+				m.selectedPath = filepath.Join(m.currentDir, m.entries[m.cursor])
+			} else {
+				m.selectedPath = m.currentDir
+			}
 		}
 	}
 	return m, nil

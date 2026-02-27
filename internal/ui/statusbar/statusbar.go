@@ -30,7 +30,7 @@ func Render(width int, projectName string, prefixMode bool) string {
 
 	var right string
 	if prefixMode {
-		right = "d/p: detach  x: close  ^a: literal  esc: cancel "
+		right = "d/p: detach  x: kill  ^a: literal  esc: cancel "
 	} else {
 		right = "^a d: detach "
 	}

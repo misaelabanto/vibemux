@@ -22,16 +22,32 @@ const (
 // DetachMsg is sent when the user detaches from the terminal (ctrl+a d or ctrl+a p).
 type DetachMsg struct{}
 
+// KillMsg is sent when the user explicitly kills the session (ctrl+a x).
+type KillMsg struct{}
+
+// SessionOutputMsg is PTY output tagged with a project ID so background sessions
+// can be routed correctly.
+type SessionOutputMsg struct {
+	ProjectID string
+	Data      []byte
+}
+
+// SessionExitedMsg indicates a PTY exited, tagged with project ID.
+type SessionExitedMsg struct {
+	ProjectID string
+}
+
 type Model struct {
 	ptyInst     *pty.Pty
 	vterm       vt10x.Terminal
+	projectID   string
 	projectName string
 	mode        InputMode
 	width       int
 	height      int
 }
 
-func New(ptyInst *pty.Pty, projectName string, width, height int) Model {
+func New(ptyInst *pty.Pty, projectID, projectName string, width, height int) Model {
 	termH := height - 1
 	if termH < 1 {
 		termH = 1
@@ -40,6 +56,7 @@ func New(ptyInst *pty.Pty, projectName string, width, height int) Model {
 	return Model{
 		ptyInst:     ptyInst,
 		vterm:       vterm,
+		projectID:   projectID,
 		projectName: projectName,
 		mode:        ModeNormal,
 		width:       width,
@@ -48,16 +65,16 @@ func New(ptyInst *pty.Pty, projectName string, width, height int) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return pty.ReadCmd(m.ptyInst)
+	return m.readCmd()
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case pty.OutputMsg:
+	case SessionOutputMsg:
 		m.vterm.Write(msg.Data)
-		return m, pty.ReadCmd(m.ptyInst)
+		return m, m.readCmd()
 
-	case pty.ExitedMsg:
+	case SessionExitedMsg:
 		return m, func() tea.Msg { return DetachMsg{} }
 
 	case tea.KeyPressMsg:
@@ -65,6 +82,22 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m Model) readCmd() tea.Cmd {
+	id, p := m.projectID, m.ptyInst
+	return func() tea.Msg {
+		buf := make([]byte, 4096)
+		n, err := p.Read(buf)
+		if err != nil {
+			return SessionExitedMsg{ProjectID: id}
+		}
+		return SessionOutputMsg{ProjectID: id, Data: buf[:n]}
+	}
+}
+
+func (m Model) Close() {
+	m.ptyInst.Close()
 }
 
 func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
@@ -78,12 +111,12 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 			m.ptyInst.Write([]byte{0x01})
 			return m, nil
 		case key.Code == 'p', key.Code == 'd':
-			// Detach: close PTY and return to project list
-			m.ptyInst.Close()
+			// Detach: keep PTY running in background
 			return m, func() tea.Msg { return DetachMsg{} }
 		case key.Code == 'x':
+			// Kill: close PTY and destroy session
 			m.ptyInst.Close()
-			return m, func() tea.Msg { return DetachMsg{} }
+			return m, func() tea.Msg { return KillMsg{} }
 		default:
 			return m, nil
 		}
