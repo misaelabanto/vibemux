@@ -15,27 +15,29 @@ Each session runs in a real PTY (not a wrapper), so shells behave like native te
 
 ## Installation
 
+### Install via `go install`
+
+```bash
+go install github.com/misaelabanto/vibemux@latest
+```
+
+Then run:
+```bash
+vibemux
+```
+
 ### Build from source
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/misaelabanto/vibemux.git
 cd vibemux
 go build -o vibemux .
+./vibemux
 ```
 
 ### Requirements
 - Go 1.21+
 - A POSIX-compliant shell (`$SHELL` environment variable, defaults to `/bin/sh`)
-
-The binary can then be run directly:
-```bash
-./vibemux
-```
-
-Or install to your `$GOPATH/bin`:
-```bash
-go install .
-```
 
 ## Usage
 
