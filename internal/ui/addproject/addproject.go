@@ -26,7 +26,19 @@ type Model struct {
 
 func New() Model {
 	home, _ := os.UserHomeDir()
-	m := Model{currentDir: home}
+	startDir := home
+
+	// Try preferred directories in order
+	preferredDirs := []string{"Code", "code", "Projects", "projects"}
+	for _, dir := range preferredDirs {
+		candidate := filepath.Join(home, dir)
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			startDir = candidate
+			break
+		}
+	}
+
+	m := Model{currentDir: startDir}
 	m.loadEntries()
 	return m
 }
