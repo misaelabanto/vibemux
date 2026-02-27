@@ -4,12 +4,8 @@ import (
 	"os"
 	"os/exec"
 
-	tea "charm.land/bubbletea/v2"
 	gospty "github.com/creack/pty"
 )
-
-type OutputMsg struct{ Data []byte }
-type ExitedMsg struct{ Err error }
 
 type Pty struct {
 	f   *os.File
@@ -30,6 +26,10 @@ func Start(dir string, cols, rows int) (*Pty, error) {
 	return &Pty{f: f, cmd: cmd}, nil
 }
 
+func (p *Pty) Read(buf []byte) (int, error) {
+	return p.f.Read(buf)
+}
+
 func (p *Pty) Write(data []byte) {
 	p.f.Write(data)
 }
@@ -42,18 +42,5 @@ func (p *Pty) Close() {
 	p.f.Close()
 	if p.cmd.Process != nil {
 		p.cmd.Process.Kill()
-	}
-}
-
-// ReadCmd returns a tea.Cmd that blocks until data arrives or EOF.
-// Re-queue this cmd from Update on every OutputMsg to keep the loop going.
-func ReadCmd(p *Pty) tea.Cmd {
-	return func() tea.Msg {
-		buf := make([]byte, 4096)
-		n, err := p.f.Read(buf)
-		if err != nil {
-			return ExitedMsg{Err: err}
-		}
-		return OutputMsg{Data: buf[:n]}
 	}
 }
