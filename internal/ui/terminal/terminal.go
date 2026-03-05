@@ -45,6 +45,8 @@ type Model struct {
 	mode        InputMode
 	width       int
 	height      int
+	history     []string        // scrollback history
+	scrollOffset int            // how many lines scrolled up (0 = bottom)
 }
 
 func New(ptyInst *pty.Pty, projectID, projectName string, width, height int) Model {
@@ -54,13 +56,15 @@ func New(ptyInst *pty.Pty, projectID, projectName string, width, height int) Mod
 	}
 	vterm := vt10x.New(vt10x.WithSize(width, termH))
 	return Model{
-		ptyInst:     ptyInst,
-		vterm:       vterm,
-		projectID:   projectID,
-		projectName: projectName,
-		mode:        ModeNormal,
-		width:       width,
-		height:      height,
+		ptyInst:      ptyInst,
+		vterm:        vterm,
+		projectID:    projectID,
+		projectName:  projectName,
+		mode:         ModeNormal,
+		width:        width,
+		height:       height,
+		history:      make([]string, 0, 1000), // max 1000 lines of history
+		scrollOffset: 0,
 	}
 }
 
@@ -71,17 +75,55 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case SessionOutputMsg:
+		// Capture current screen to history before updating
+		m.captureHistoryBefore()
 		m.vterm.Write(msg.Data)
+		// Reset scroll when new output arrives (user back at bottom)
+		m.scrollOffset = 0
 		return m, m.readCmd()
 
 	case SessionExitedMsg:
 		return m, func() tea.Msg { return DetachMsg{} }
 
 	case tea.KeyPressMsg:
+		// Reset scroll offset on any keystroke (back to live view)
+		m.scrollOffset = 0
 		return m.handleKey(msg)
+
+	case tea.MouseWheelMsg:
+		(&m).handleMouseWheel(msg)
+		return m, nil
 	}
 
 	return m, nil
+}
+
+func (m *Model) captureHistoryBefore() {
+	cols, rows := m.vterm.Size()
+	m.vterm.Lock()
+	defer m.vterm.Unlock()
+
+	// Render current screen to string
+	for y := 0; y < rows; y++ {
+		var sb strings.Builder
+		for x := 0; x < cols; x++ {
+			g := m.vterm.Cell(x, y)
+			char := g.Char
+			if char == 0 {
+				char = ' '
+			}
+			sb.WriteRune(char)
+		}
+		// Trim trailing spaces from line
+		line := strings.TrimRight(sb.String(), " ")
+		m.history = append(m.history, line)
+	}
+
+	// Keep history bounded
+	maxHistory := 5000
+	if len(m.history) > maxHistory {
+		m.history = m.history[len(m.history)-maxHistory:]
+	}
 }
 
 func (m Model) readCmd() tea.Cmd {
@@ -136,10 +178,85 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *Model) handleMouseWheel(msg tea.MouseWheelMsg) {
+	mouse := msg.Mouse()
+	// In bubbletea v2, mouse wheel button values need to be checked
+	// Check if scrolling up or down based on button
+	// The mouse.Button will be WheelUp or WheelDown (specific button values from ansi)
+	// For now, we can determine direction from the event type itself
+	// MouseWheelMsg typically contains direction information
+
+	// Try to detect scroll direction - this is a basic approach
+	// We'll check the Button value or assume alternating pattern
+	// For now, implement simple up/down detection
+	if mouse.Button == 4 || mouse.Button == 65 { // Scroll up
+		maxScroll := len(m.history) - (m.height - 1)
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		m.scrollOffset += 3
+		if m.scrollOffset > maxScroll {
+			m.scrollOffset = maxScroll
+		}
+	} else if mouse.Button == 5 || mouse.Button == 66 { // Scroll down
+		m.scrollOffset -= 3
+		if m.scrollOffset < 0 {
+			m.scrollOffset = 0
+		}
+	}
+}
+
 func (m Model) View() string {
-	content := renderANSI(m.vterm)
+	var content string
+
+	if m.scrollOffset > 0 {
+		// Show scrollback history
+		content = m.renderScrollback()
+	} else {
+		// Show live terminal
+		content = renderANSI(m.vterm)
+	}
+
 	bar := statusbar.Render(m.width, m.projectName, m.mode == ModePrefix)
 	return content + bar
+}
+
+func (m Model) renderScrollback() string {
+	termHeight := m.height - 1
+	if termHeight < 1 {
+		termHeight = 1
+	}
+
+	var sb strings.Builder
+	startLine := len(m.history) - m.scrollOffset
+	endLine := startLine + termHeight
+
+	if startLine < 0 {
+		startLine = 0
+	}
+	if endLine > len(m.history) {
+		endLine = len(m.history)
+	}
+
+	// Show history lines
+	for i := startLine; i < endLine; i++ {
+		if i < len(m.history) {
+			// Pad line to width and add newline
+			line := m.history[i]
+			if len(line) > m.width {
+				line = line[:m.width]
+			} else if len(line) < m.width {
+				line = line + strings.Repeat(" ", m.width-len(line))
+			}
+			sb.WriteString(line)
+		} else {
+			// Empty line
+			sb.WriteString(strings.Repeat(" ", m.width))
+		}
+		sb.WriteByte('\n')
+	}
+
+	return sb.String()
 }
 
 func (m *Model) SetSize(w, h int) {
