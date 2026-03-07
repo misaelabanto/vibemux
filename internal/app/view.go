@@ -10,8 +10,6 @@ func (m AppModel) View() tea.View {
 		content = m.projectList.View()
 	case ViewAddProject:
 		content = m.addProject.View()
-	case ViewTerminal:
-		content = m.terminal.View()
 	}
 
 	v := tea.NewView(content)
