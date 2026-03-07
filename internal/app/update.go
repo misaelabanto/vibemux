@@ -8,72 +8,35 @@ import (
 
 	"vibemux/internal/config"
 	"vibemux/internal/model"
-	"vibemux/internal/pty"
+	"vibemux/internal/tmux"
 	"vibemux/internal/ui/addproject"
 	"vibemux/internal/ui/projectlist"
-	"vibemux/internal/ui/terminal"
 )
 
 func (m AppModel) Init() tea.Cmd {
-	return nil
+	return refreshSessionStatus()
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Handle tagged PTY messages at top level so background sessions receive them.
 	switch msg := msg.(type) {
-	case terminal.SessionOutputMsg:
-		id := msg.ProjectID
-		if m.state == ViewTerminal && m.activeSessionID == id {
-			var cmd tea.Cmd
-			m.terminal, cmd = m.terminal.Update(msg)
-			return m, cmd
-		}
-		if sess, ok := m.sessions[id]; ok {
-			var cmd tea.Cmd
-			sess, cmd = sess.Update(msg)
-			m.sessions[id] = sess
-			return m, cmd
-		}
-		return m, nil
-
-	case terminal.SessionExitedMsg:
-		id := msg.ProjectID
-		if m.state == ViewTerminal && m.activeSessionID == id {
-			delete(m.sessions, id)
-			m.state = ViewProjectList
-			projects, _ := config.LoadProjects()
-			m.projects = projects
-			m.projectList = projectlist.New(projects, m.width, m.height)
-			return m, nil
-		}
-		delete(m.sessions, id)
-		return m, nil
-
-	case terminal.DetachMsg:
-		m.sessions[m.activeSessionID] = m.terminal
-		m.state = ViewProjectList
+	case TmuxReturnedMsg:
+		// User detached or session ended — return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
 		m.projectList = projectlist.New(projects, m.width, m.height)
-		return m, nil
-
-	case terminal.KillMsg:
-		delete(m.sessions, m.activeSessionID)
+		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
-		projects, _ := config.LoadProjects()
-		m.projects = projects
-		m.projectList = projectlist.New(projects, m.width, m.height)
-		return m, nil
-	}
+		return m, refreshSessionStatus()
 
-	switch msg := msg.(type) {
+	case SessionStatusMsg:
+		active := mapSessionsToProjects(msg.ActiveSessions, m.projects)
+		m.projectList.SetActiveSessions(active)
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.projectList.SetSize(msg.Width, msg.Height)
-		if m.state == ViewTerminal {
-			m.terminal.SetSize(msg.Width, msg.Height)
-		}
 		return m, nil
 	}
 
@@ -82,8 +45,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateProjectList(msg)
 	case ViewAddProject:
 		return m.updateAddProject(msg)
-	case ViewTerminal:
-		return m.updateTerminal(msg)
 	}
 
 	return m, nil
@@ -103,16 +64,26 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.addProject.Init()
 		case "d":
 			if p, ok := m.projectList.SelectedProject(); ok {
+				// Kill any associated tmux session.
+				name := tmux.SessionName(p.ID)
+				if tmux.HasSession(name) {
+					tmux.KillSession(name)
+				}
 				config.RemoveProject(p.ID)
 				projects, _ := config.LoadProjects()
 				m.projects = projects
 				cmd := m.projectList.SetProjects(projects)
-				return m, cmd
+				return m, tea.Batch(cmd, refreshSessionStatus())
+			}
+		case "x":
+			if p, ok := m.projectList.SelectedProject(); ok {
+				name := tmux.SessionName(p.ID)
+				if tmux.HasSession(name) {
+					tmux.KillSession(name)
+				}
+				return m, refreshSessionStatus()
 			}
 		case "q", "ctrl+c":
-			for _, sess := range m.sessions {
-				sess.Close()
-			}
 			return m, tea.Quit
 		}
 	}
@@ -151,43 +122,47 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m AppModel) updateTerminal(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	m.terminal, cmd = m.terminal.Update(msg)
-	return m, cmd
-}
-
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	config.TouchProject(p.ID)
 
-	// Reattach to existing background session if available.
-	if sess, ok := m.sessions[p.ID]; ok {
-		delete(m.sessions, p.ID)
-		m.activeSessionID = p.ID
-		m.terminal = sess
-		m.terminal.SetSize(m.width, m.height)
-		proj := p
-		m.activeProject = &proj
-		m.state = ViewTerminal
-		return m, nil // read loop already running from background
-	}
-
-	// Start a new PTY session.
-	termH := m.height - 1
-	if termH < 1 {
-		termH = 1
-	}
-
-	ptyInst, err := pty.Start(p.Path, m.width, termH)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error starting PTY: %v\n", err)
+	if !tmux.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
 		return m, nil
 	}
 
-	proj := p
-	m.activeProject = &proj
-	m.activeSessionID = p.ID
-	m.terminal = terminal.New(ptyInst, p.ID, p.Name, m.width, m.height)
-	m.state = ViewTerminal
-	return m, m.terminal.Init()
+	name := tmux.SessionName(p.ID)
+
+	// Create a new tmux session if one doesn't already exist.
+	if !tmux.HasSession(name) {
+		if err := tmux.NewSession(name, p.Path); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+			return m, nil
+		}
+	}
+
+	cmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
+		return TmuxReturnedMsg{Err: err}
+	})
+	return m, cmd
+}
+
+// refreshSessionStatus returns a Cmd that queries tmux for active vibemux
+// sessions and sends a SessionStatusMsg.
+func refreshSessionStatus() tea.Cmd {
+	return func() tea.Msg {
+		sessions, _ := tmux.ListVibemuxSessions()
+		return SessionStatusMsg{ActiveSessions: sessions}
+	}
+}
+
+// mapSessionsToProjects maps tmux session names back to project IDs.
+func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
+	active := map[string]bool{}
+	for _, p := range projects {
+		name := tmux.SessionName(p.ID)
+		if sessions[name] {
+			active[p.ID] = true
+		}
+	}
+	return active
 }
