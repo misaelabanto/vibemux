@@ -1,17 +1,17 @@
 # vibemux
 
-A project-based terminal multiplexer written in Go with a bubbletea TUI. Manage multiple shell sessions across projects — detach without killing, reattach to resume exactly where you left off.
+A project-based terminal session manager written in Go with a bubbletea TUI. Launch and manage persistent tmux sessions for your projects — detach without killing, reattach to resume exactly where you left off.
 
 ## What it does
 
 `vibemux` lets you:
 - **Register project directories** in a persistent config
-- **Open interactive shell sessions** inside them with a PTY (pseudo-terminal) emulator
-- **Switch between projects** with sessions staying alive in the background
-- **Resume with full state** — history, running processes, environment — when you return to a project
-- **Use `Ctrl+a` prefix** for commands, leaving `Ctrl+b` free for inner tmux/screen sessions
+- **Open tmux sessions** for projects with a keystroke
+- **Detach and switch** between projects without terminating shells
+- **Reattach seamlessly** to running sessions with full history and state preserved
+- **See active sessions** at a glance with visual indicators in the project list
 
-Each session runs in a real PTY (not a wrapper), so shells behave like native terminals. Full VT100 emulation means colors, cursor movement, and full-screen TUIs (vim, htop, etc.) all work correctly.
+Each project gets its own tmux session that persists even after you quit vibemux. Full tmux compatibility means you can use any tmux features, plugins, or keybindings you're familiar with.
 
 ## Installation
 
@@ -36,6 +36,8 @@ go build -o vibemux .
 ```
 
 ### Requirements
+
+- **tmux** 2.6+ (required — vibemux uses tmux for terminal emulation)
 - Go 1.21+
 - A POSIX-compliant shell (`$SHELL` environment variable, defaults to `/bin/sh`)
 
@@ -44,27 +46,33 @@ go build -o vibemux .
 ### Project list (startup screen)
 
 ```
-Enter    Open selected project in a terminal session
+Enter    Open selected project (attach tmux session)
 a        Add a new project (directory picker)
-d        Delete selected project
-q        Quit (closes all background sessions)
+x        Kill tmux session for selected project
+d        Delete project from config (kills session if active)
+q        Quit vibemux (tmux sessions stay alive)
 ```
 
-### Inside a terminal session (prefix mode: `Ctrl+a` + command)
+Note: The `●` indicator next to a project name shows that an active tmux session exists for it.
+
+### Inside a tmux session
+
+Once attached, you have full tmux control. Detach using:
 
 ```
-Ctrl+a d       Detach from session (keeps shell running in background)
-Ctrl+a p       Same as detach
-Ctrl+a x       Kill session (closes the shell)
-Ctrl+a Ctrl+a  Send literal Ctrl+a to the shell
+Ctrl+b d       Detach from session (return to vibemux)
+Ctrl+b x       Kill pane/window
+Ctrl+b c       Create new window
 ```
+
+The default tmux prefix is `Ctrl+b`. See `man tmux` for the full command reference.
 
 ### Session behavior
 
-- **Detach** (`Ctrl+a d` / `Ctrl+a p`): Suspends the view and returns to the project list. The shell process continues running in the background with full state preserved.
+- **Detach** (`Ctrl+b d`): Returns you to the vibemux project list. The shell process continues running in the background with full state preserved.
 - **Reattach**: Select the same project again to reconnect to the background session. Everything you left running is still there.
-- **Kill** (`Ctrl+a x`): Terminates the shell process. Reopening the project starts a fresh session.
-- **Quit** (`q` from project list): Closes all background sessions cleanly before exiting.
+- **Kill** (`x` from project list): Terminates the tmux session. Reopening the project starts a fresh session.
+- **Quit** (`q` from project list): Exits vibemux. All tmux sessions persist and can be reattached later.
 
 ## Architecture
 
@@ -74,39 +82,37 @@ Ctrl+a Ctrl+a  Send literal Ctrl+a to the shell
 |-----------|---------|
 | `internal/app` | Root TUI model, state machine, message routing |
 | `internal/config` | XDG-compliant config store for projects (JSON) |
-| `internal/model` | Project and Session data structures |
-| `internal/pty` | PTY lifecycle (start, read, write, resize, close) |
-| `internal/ui/` | TUI subcomponents (project list, terminal, status bar, file picker) |
+| `internal/model` | Project data structure |
+| `internal/tmux` | tmux session management (create, attach, kill, list sessions) |
+| `internal/ui/` | TUI subcomponents (project list, file picker) |
 
-### Session persistence
+### How it works
+
+vibemux is a **project launcher** that delegates terminal emulation to tmux:
 
 ```
 ┌─ vibemux (main app)
-├─ activeSessionID (currently displayed terminal)
-├─ sessions map (background shells)
-│  ├─ project-id-1 → Terminal + PTY (running, background)
-│  └─ project-id-2 → Terminal + PTY (running, background)
-└─ Terminal emulator (vt10x)
-   └─ Renders the shell output with full ANSI SGR colors/attrs
+│  ├─ Project list with session status
+│  └─ Key handler
+│     ├─ "enter" → tmux attach (hands terminal control to tmux)
+│     ├─ "x" → tmux kill-session
+│     └─ "d" → config.RemoveProject()
+│
+└─ tmux (subprocess, full terminal control)
+   ├─ Session: vibemux-<uuid>
+   │  └─ Shell with full history and process state
+   └─ Detach (Ctrl+b d) → returns control to vibemux
 ```
 
-When you detach, the `terminal.Model` and its PTY move into the `sessions` map. When you reattach, it moves back to `activeSessionID` — the PTY's file descriptor and shell process remain connected the entire time.
+When you open a project, vibemux creates a tmux session (if needed) and uses `tea.ExecProcess()` to hand terminal control to tmux. The session persists in the tmux server even after you detach or quit vibemux. Session names follow the pattern `vibemux-<uuid-without-dashes>`.
 
-### Message flow for background sessions
+### Session persistence
 
-PTY output (and exit signals) are tagged with `ProjectID` in the message so the router knows which background session to update:
-
-```
-PTY output → SessionOutputMsg{ProjectID, Data}
-            ↓
-       App.Update (routes to background session in sessions map)
-            ↓
-       Terminal.Update (writes to vterm)
-            ↓
-       vterm.String() renders on next frame (even if session is in background)
-```
-
-This allows multiple shells to produce output concurrently without interfering.
+Sessions are managed by the tmux server, not vibemux. This means:
+- Sessions persist across vibemux restarts
+- You can list them with `tmux list-sessions`
+- You can manually attach with `tmux attach-session -t vibemux-<uuid>`
+- Sessions can accumulate if not cleaned up (use `x` or `d` in vibemux to kill them)
 
 ## Dependencies
 
@@ -116,18 +122,14 @@ This allows multiple shells to produce output concurrently without interfering.
 |---------|-----|
 | `charm.land/bubbletea/v2` | TUI event loop — state machine, input handling, render cycle |
 | `charm.land/bubbles/v2` | TUI components: `list` (project picker), `filepicker` (add project) |
-| `charm.land/lipgloss/v2` | Styling for status bar and UI elements (ANSI colors, layouts) |
-| `github.com/hinshun/vt10x` | VT100 terminal emulator — parses ANSI escape sequences, renders cell grid |
-| `github.com/creack/pty` | PTY allocation and lifecycle (Unix ioctl wrappers) |
+| `charm.land/lipgloss/v2` | Styling for UI elements (ANSI colors, layouts) |
 | `github.com/google/uuid` | Project ID generation (stable, collision-free) |
 
-### Why not tmux/screen?
+### Requirements
 
-`vibemux` uses a direct PTY instead of spawning a `tmux` session inside it. This means:
-- **Simpler** — no subprocess management complexity
-- **Faster** — direct shell, no tmux overhead
-- **Portable** — doesn't require tmux to be installed
-- **Full control** — we handle PTY resizing, signal forwarding, and terminal state directly
+- **tmux** must be installed and available on `$PATH`
+- Go 1.21+
+- A POSIX shell
 
 ## Project storage
 
