@@ -1,17 +1,13 @@
 package app
 
-import "vibemux/internal/model"
-
-type SwitchToProjectListMsg struct{}
-
-type OpenProjectMsg struct {
-	Project model.Project
+// TmuxReturnedMsg is sent when tea.ExecProcess returns after the user detaches
+// from (or the tmux session ends in) the attached tmux session.
+type TmuxReturnedMsg struct {
+	Err error
 }
 
-type ProjectAddedMsg struct {
-	Project model.Project
-}
-
-type ProjectDeletedMsg struct {
-	ID string
+// SessionStatusMsg carries the set of currently active vibemux tmux session
+// names so the project list can show indicators.
+type SessionStatusMsg struct {
+	ActiveSessions map[string]bool // session name → exists
 }
