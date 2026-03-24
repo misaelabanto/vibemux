@@ -6,11 +6,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"vibemux/internal/config"
-	"vibemux/internal/model"
-	"vibemux/internal/tmux"
-	"vibemux/internal/ui/addproject"
-	"vibemux/internal/ui/projectlist"
+	"github.com/misaelabanto/vibemux/internal/config"
+	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/tmux"
+	"github.com/misaelabanto/vibemux/internal/ui/addproject"
+	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
 )
 
 func (m AppModel) Init() tea.Cmd {
