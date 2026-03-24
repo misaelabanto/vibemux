@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"vibemux/internal/app"
-	"vibemux/internal/config"
+	"github.com/misaelabanto/vibemux/internal/app"
+	"github.com/misaelabanto/vibemux/internal/config"
 )
 
 func main() {
