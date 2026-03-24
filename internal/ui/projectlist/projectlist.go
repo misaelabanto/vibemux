@@ -5,7 +5,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/lipgloss/v2"
 
-	"vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/model"
 )
 
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
