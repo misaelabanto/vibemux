@@ -65,7 +65,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			if p, ok := m.projectList.SelectedProject(); ok {
 				// Kill any associated tmux session.
-				name := tmux.SessionName(p.ID)
+				name := tmux.SessionName(p.Path)
 				if tmux.HasSession(name) {
 					tmux.KillSession(name)
 				}
@@ -77,7 +77,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "x":
 			if p, ok := m.projectList.SelectedProject(); ok {
-				name := tmux.SessionName(p.ID)
+				name := tmux.SessionName(p.Path)
 				if tmux.HasSession(name) {
 					tmux.KillSession(name)
 				}
@@ -130,7 +130,7 @@ func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	name := tmux.SessionName(p.ID)
+	name := tmux.SessionName(p.Path)
 
 	// Create a new tmux session if one doesn't already exist.
 	if !tmux.HasSession(name) {
@@ -159,7 +159,7 @@ func refreshSessionStatus() tea.Cmd {
 func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
 	active := map[string]bool{}
 	for _, p := range projects {
-		name := tmux.SessionName(p.ID)
+		name := tmux.SessionName(p.Path)
 		if sessions[name] {
 			active[p.ID] = true
 		}
