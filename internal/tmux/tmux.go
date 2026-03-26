@@ -7,19 +7,16 @@ import (
 	"strings"
 )
 
-const sessionPrefix = "vibemux-"
+const sessionPrefix = "vmx-"
 
-// SessionName returns a deterministic tmux session name derived from the last
-// two components of the project path (e.g. "vibemux-parent-dirname").
+// SessionName returns a deterministic tmux session name derived from the
+// base directory name of the project path (e.g. "vibemux-myproject").
 func SessionName(projectPath string) string {
-	parts := strings.Split(filepath.Clean(projectPath), string(filepath.Separator))
-	if len(parts) >= 2 {
-		return sessionPrefix + parts[len(parts)-2] + "-" + parts[len(parts)-1]
+	base := filepath.Base(filepath.Clean(projectPath))
+	if base == "" || base == "." || base == "/" {
+		return sessionPrefix + "unknown"
 	}
-	if len(parts) == 1 {
-		return sessionPrefix + parts[0]
-	}
-	return sessionPrefix + "unknown"
+	return sessionPrefix + base
 }
 
 // IsInstalled checks whether tmux is available on PATH.
