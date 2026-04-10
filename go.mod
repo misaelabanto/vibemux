@@ -1,4 +1,4 @@
-module vibemux
+module github.com/misaelabanto/vibemux
 
 go 1.24.2
 

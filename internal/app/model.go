@@ -1,9 +1,9 @@
 package app
 
 import (
-	"vibemux/internal/model"
-	"vibemux/internal/ui/addproject"
-	"vibemux/internal/ui/projectlist"
+	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/ui/addproject"
+	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
 )
 
 type ViewState int

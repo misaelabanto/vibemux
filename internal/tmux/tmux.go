@@ -3,14 +3,20 @@ package tmux
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
-const sessionPrefix = "vibemux-"
+const sessionPrefix = "vmx-"
 
-// SessionName returns a deterministic tmux session name for a project ID.
-func SessionName(projectID string) string {
-	return sessionPrefix + strings.ReplaceAll(projectID, "-", "")
+// SessionName returns a deterministic tmux session name derived from the
+// base directory name of the project path (e.g. "vibemux-myproject").
+func SessionName(projectPath string) string {
+	base := filepath.Base(filepath.Clean(projectPath))
+	if base == "" || base == "." || base == "/" {
+		return sessionPrefix + "unknown"
+	}
+	return sessionPrefix + base
 }
 
 // IsInstalled checks whether tmux is available on PATH.

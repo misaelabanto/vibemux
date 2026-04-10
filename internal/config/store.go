@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/model"
 )
 
 func LoadProjects() ([]model.Project, error) {
