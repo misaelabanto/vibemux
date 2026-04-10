@@ -10,6 +10,17 @@ import (
 
 var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
+var bannerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+
+const banner = "" +
+	" __  __      __                                         \n" +
+	"/\\ \\/\\ \\  __/\\ \\                                        \n" +
+	"\\ \\ \\ \\ \\/\\_\\ \\ \\____    __    ___ ___   __  __  __  _  \n" +
+	" \\ \\ \\ \\ \\/\\ \\ \\ '__`\\ /'__`\\/' __` __`\\/\\ \\/\\ \\/\\ \\/'\\  \n" +
+	"  \\ \\ \\_/ \\ \\ \\ \\ \\L\\ /\\  __//\\ \\/\\ \\/\\ \\ \\ \\_\\ \\/>  </  \n" +
+	"   \\ `\\___/\\ \\_\\ \\_,__\\ \\____\\ \\_\\ \\_\\ \\_\\ \\____//\\_/\\_\\\n" +
+	"    `\\/__/  \\/_/\\/___/ \\/____/\\/_/\\/_/\\/_/\\/___/ \\//\\/_/"
+
 // projectItem wraps a model.Project to add an active session indicator.
 type projectItem struct {
 	model.Project
@@ -37,8 +48,9 @@ func New(projects []model.Project, width, height int) Model {
 	m := Model{width: width, height: height, activeSessions: map[string]bool{}}
 	items := m.projectsToItems(projects)
 	delegate := list.NewDefaultDelegate()
-	l := list.New(items, delegate, width, height-3)
-	l.Title = "Vibemux - Projects"
+	bannerHeight := lipgloss.Height(bannerStyle.Render(banner))
+	l := list.New(items, delegate, width, height-bannerHeight-2)
+	l.Title = "Projects"
 	l.SetShowHelp(true)
 	m.list = l
 	return m
@@ -55,8 +67,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
+	b := bannerStyle.Render(banner)
 	help := helpStyle.Render("enter open  a add  d delete  x kill session  q quit")
-	return m.list.View() + "\n" + help
+	return lipgloss.JoinVertical(lipgloss.Left, b, m.list.View(), help)
 }
 
 func (m Model) SelectedProject() (model.Project, bool) {
@@ -76,7 +89,8 @@ func (m Model) SelectedProject() (model.Project, bool) {
 func (m *Model) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	m.list.SetSize(w, h-3)
+	bannerHeight := lipgloss.Height(bannerStyle.Render(banner))
+	m.list.SetSize(w, h-bannerHeight-2)
 }
 
 func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
