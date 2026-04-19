@@ -51,40 +51,45 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "enter":
-			if p, ok := m.projectList.SelectedProject(); ok {
-				return m.openProject(p)
-			}
-		case "a":
-			m.state = ViewAddProject
-			m.addProject = addproject.New()
-			return m, m.addProject.Init()
-		case "d":
-			if p, ok := m.projectList.SelectedProject(); ok {
-				// Kill any associated tmux session.
-				name := tmux.SessionName(p.Path)
-				if tmux.HasSession(name) {
-					tmux.KillSession(name)
-				}
-				config.RemoveProject(p.ID)
-				projects, _ := config.LoadProjects()
-				m.projects = projects
-				cmd := m.projectList.SetProjects(projects)
-				return m, tea.Batch(cmd, refreshSessionStatus())
-			}
-		case "x":
-			if p, ok := m.projectList.SelectedProject(); ok {
-				name := tmux.SessionName(p.Path)
-				if tmux.HasSession(name) {
-					tmux.KillSession(name)
-				}
-				return m, refreshSessionStatus()
-			}
-		case "q", "ctrl+c":
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		s := key.String()
+		if s == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if s == "enter" && m.projectList.IsFiltering() {
+			var cmd tea.Cmd
+			m.projectList, cmd = m.projectList.Update(msg)
+			if p, ok := m.projectList.SelectedProject(); ok {
+				newModel, openCmd := m.openProject(p)
+				return newModel, tea.Batch(cmd, openCmd)
+			}
+			return m, cmd
+		}
+		if !m.projectList.IsFiltering() {
+			switch s {
+			case "enter":
+				if p, ok := m.projectList.SelectedProject(); ok {
+					return m.openProject(p)
+				}
+			case "ctrl+n":
+				m.state = ViewAddProject
+				m.addProject = addproject.New()
+				return m, m.addProject.Init()
+			case "ctrl+d":
+				if p, ok := m.projectList.SelectedProject(); ok {
+					tmux.KillSession(tmux.SessionName(p.Path))
+					config.RemoveProject(p.ID)
+					projects, _ := config.LoadProjects()
+					m.projects = projects
+					cmd := m.projectList.SetProjects(projects)
+					return m, tea.Batch(cmd, refreshSessionStatus())
+				}
+			case "ctrl+x":
+				if p, ok := m.projectList.SelectedProject(); ok {
+					tmux.KillSession(tmux.SessionName(p.Path))
+					return m, refreshSessionStatus()
+				}
+			}
 		}
 	}
 
