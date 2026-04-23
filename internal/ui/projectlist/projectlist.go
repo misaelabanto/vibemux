@@ -3,6 +3,7 @@ package projectlist
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -271,8 +272,13 @@ func (d highlightWhileFilteringDelegate) Render(w io.Writer, m list.Model, index
 }
 
 func (m Model) projectsToItems(projects []model.Project) []list.Item {
-	items := make([]list.Item, len(projects))
-	for i, p := range projects {
+	sorted := make([]model.Project, len(projects))
+	copy(sorted, projects)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		return sorted[i].Path < sorted[j].Path
+	})
+	items := make([]list.Item, len(sorted))
+	for i, p := range sorted {
 		items[i] = projectItem{
 			Project: p,
 			active:  m.activeSessions[p.ID],
