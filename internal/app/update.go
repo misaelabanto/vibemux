@@ -99,9 +99,9 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+c" {
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		if key.String() == "ctrl+c" && !m.addProject.IsRunning() {
+			m.addProject.Cancel()
 			m.state = ViewProjectList
 			return m, nil
 		}
@@ -109,6 +109,11 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.addProject, cmd = m.addProject.Update(msg)
+
+	if m.addProject.Canceled() {
+		m.state = ViewProjectList
+		return m, nil
+	}
 
 	if path := m.addProject.SelectedPath(); path != "" {
 		m.addProject.ClearSelection()
