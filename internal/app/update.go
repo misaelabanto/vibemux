@@ -23,7 +23,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// User detached or session ended — return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
+		prevActiveOnly := m.projectList.ShowActiveOnly()
 		m.projectList = projectlist.New(projects, m.width, m.height)
+		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
 		return m, refreshSessionStatus()
@@ -89,6 +91,9 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 					tmux.KillSession(tmux.SessionName(p.Path))
 					return m, refreshSessionStatus()
 				}
+			case "ctrl+a":
+				cmd := m.projectList.ToggleActiveOnly()
+				return m, cmd
 			}
 		}
 	}
