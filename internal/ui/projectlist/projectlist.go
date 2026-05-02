@@ -49,15 +49,17 @@ func (p projectItem) FilterValue() string { return p.Project.Name }
 
 type Model struct {
 	list           list.Model
+	projects       []model.Project // unfiltered slice, source of truth for buildItems
 	activeSessions map[string]bool // project ID → has active tmux session
+	showActiveOnly bool
 	width          int
 	height         int
 	numberBuffer   string
 }
 
 func New(projects []model.Project, width, height int) Model {
-	m := Model{width: width, height: height, activeSessions: map[string]bool{}}
-	items := m.projectsToItems(projects)
+	m := Model{width: width, height: height, activeSessions: map[string]bool{}, projects: projects}
+	items := m.buildItems()
 	delegate := highlightWhileFilteringDelegate{list.NewDefaultDelegate()}
 	bannerHeight := lipgloss.Height(bannerStyle.Render(banner))
 	l := list.New(items, delegate, width, height-bannerHeight-2)
@@ -149,7 +151,11 @@ func isTypingChar(key tea.KeyPressMsg) bool {
 
 func (m Model) View() string {
 	b := bannerStyle.Render(banner)
-	help := "enter open  type filter  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit"
+	toggle := "ctrl+a active"
+	if m.showActiveOnly {
+		toggle = "ctrl+a all"
+	}
+	help := fmt.Sprintf("enter open  type filter  %s  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit", toggle)
 	if m.numberBuffer != "" {
 		help = fmt.Sprintf("→ %s    ", m.numberBuffer) + help
 	}
@@ -171,29 +177,52 @@ func (m *Model) SetSize(w, h int) {
 }
 
 func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
-	return m.list.SetItems(m.projectsToItems(projects))
+	m.projects = projects
+	return m.list.SetItems(m.buildItems())
 }
 
 // SetActiveSessions updates which projects have running tmux sessions and
-// refreshes the indicators on each item.
+// rebuilds items so the active-only filter (if on) reflects the new set.
 func (m *Model) SetActiveSessions(active map[string]bool) {
 	m.activeSessions = active
-	items := m.list.Items()
-	refreshed := make([]list.Item, len(items))
-	for i, item := range items {
-		if pi, ok := item.(projectItem); ok {
-			pi.active = active[pi.Project.ID]
-			refreshed[i] = pi
-		} else {
-			refreshed[i] = item
-		}
-	}
-	m.list.SetItems(refreshed)
+	m.list.SetItems(m.buildItems())
 }
 
 // ActiveSessions returns the current active sessions map.
 func (m Model) ActiveSessions() map[string]bool {
 	return m.activeSessions
+}
+
+// ToggleActiveOnly flips the active-only filter and rebuilds items.
+func (m *Model) ToggleActiveOnly() tea.Cmd {
+	m.showActiveOnly = !m.showActiveOnly
+	m.numberBuffer = ""
+	m.syncTitle()
+	return m.list.SetItems(m.buildItems())
+}
+
+// SetShowActiveOnly preserves the toggle across model rebuilds (e.g. after
+// returning from a tmux session).
+func (m *Model) SetShowActiveOnly(v bool) {
+	if m.showActiveOnly == v {
+		return
+	}
+	m.showActiveOnly = v
+	m.syncTitle()
+	m.list.SetItems(m.buildItems())
+}
+
+// ShowActiveOnly reports whether the active-only filter is on.
+func (m Model) ShowActiveOnly() bool {
+	return m.showActiveOnly
+}
+
+func (m *Model) syncTitle() {
+	if m.showActiveOnly {
+		m.list.Title = "Projects (active only)"
+	} else {
+		m.list.Title = "Projects"
+	}
 }
 
 // highlightWhileFilteringDelegate is a DefaultDelegate that also applies the
@@ -271,14 +300,23 @@ func (d highlightWhileFilteringDelegate) Render(w io.Writer, m list.Model, index
 	fmt.Fprintf(w, "%s", title)
 }
 
-func (m Model) projectsToItems(projects []model.Project) []list.Item {
-	sorted := make([]model.Project, len(projects))
-	copy(sorted, projects)
+func (m Model) buildItems() []list.Item {
+	sorted := make([]model.Project, len(m.projects))
+	copy(sorted, m.projects)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].Path < sorted[j].Path
 	})
-	items := make([]list.Item, len(sorted))
-	for i, p := range sorted {
+	filtered := sorted
+	if m.showActiveOnly {
+		filtered = make([]model.Project, 0, len(sorted))
+		for _, p := range sorted {
+			if m.activeSessions[p.ID] {
+				filtered = append(filtered, p)
+			}
+		}
+	}
+	items := make([]list.Item, len(filtered))
+	for i, p := range filtered {
 		items[i] = projectItem{
 			Project: p,
 			active:  m.activeSessions[p.ID],
