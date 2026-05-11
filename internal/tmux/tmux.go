@@ -25,9 +25,17 @@ func IsInstalled() bool {
 	return err == nil
 }
 
+// exactTarget prefixes a session name with "=" so tmux performs an exact-name
+// lookup instead of its default prefix match. Without this, `vmx-agendalo`
+// would match an existing `vmx-agendalo-app-nuxt` and the wrong session would
+// be returned/attached/killed.
+func exactTarget(name string) string {
+	return "=" + name
+}
+
 // HasSession checks whether a tmux session with the given name exists.
 func HasSession(name string) bool {
-	err := exec.Command("tmux", "has-session", "-t", name).Run()
+	err := exec.Command("tmux", "has-session", "-t", exactTarget(name)).Run()
 	return err == nil
 }
 
@@ -42,7 +50,7 @@ func NewSession(name, dir string) error {
 // bubbletea's ExecProcess won't override them with its wrapped readers/writers,
 // which tmux cannot use (it needs a real /dev/tty).
 func AttachCommand(name string) *exec.Cmd {
-	cmd := exec.Command("tmux", "attach-session", "-t", name)
+	cmd := exec.Command("tmux", "attach-session", "-t", exactTarget(name))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -51,7 +59,7 @@ func AttachCommand(name string) *exec.Cmd {
 
 // KillSession destroys the named tmux session.
 func KillSession(name string) error {
-	return exec.Command("tmux", "kill-session", "-t", name).Run()
+	return exec.Command("tmux", "kill-session", "-t", exactTarget(name)).Run()
 }
 
 // ListVibemuxSessions returns a set of active tmux session names that have the
