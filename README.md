@@ -52,6 +52,7 @@ enter          Open selected project (attach tmux session)
 type           Filter projects by name (any printable character starts filtering)
 1-9 / digits   Quick-select project by its index number (e.g. type "12" → project #12)
 ctrl+a         Toggle "active only" view (show only projects with running sessions)
+ctrl+o         Open the dashboard (every active session as a live tiled pane)
 ctrl+n         Add a new project (opens add-project menu)
 ctrl+d         Delete project from config (kills session if active)
 ctrl+x         Kill tmux session for selected project
@@ -74,6 +75,25 @@ Clone GitHub repo       Clone a remote repo into a chosen parent directory
 ```
 
 When cloning, vibemux normalizes the URL. GitHub HTTPS URLs are rewritten to SSH (`git@github.com:owner/repo.git`) so authentication uses your SSH key. The repository directory name is extracted automatically.
+
+### Dashboard (ctrl+o)
+
+Press `ctrl+o` in the project list to open a `vmx-dashboard` tmux session
+showing every active vibemux session as a live pane in a tiled grid: a
+mission-control view for watching everything at once and switching context
+fast.
+
+- The dashboard is rebuilt from scratch every time you press `ctrl+o`, so it
+  always reflects the sessions that are active right now.
+- Each pane is a nested tmux client attached to one session. Typing into the
+  focused pane interacts with that session normally.
+- `Ctrl+b` targets the dashboard itself: `Ctrl+b d` detaches it and returns
+  to vibemux, `Ctrl+b` + arrows move between panes. Press the prefix twice
+  (`Ctrl+b Ctrl+b ...`) to send a command to the inner session under the
+  focused pane.
+- When a session ends, its pane closes automatically.
+- If no sessions are active, vibemux shows "no active sessions" and stays in
+  the project list.
 
 ### Inside a tmux session
 
