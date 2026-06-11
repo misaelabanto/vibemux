@@ -94,6 +94,8 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
 				return m, cmd
+			case "ctrl+o":
+				return m.openDashboard()
 			}
 		}
 	}
@@ -156,6 +158,31 @@ func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	}
 
 	cmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
+		return TmuxReturnedMsg{Err: err}
+	})
+	return m, cmd
+}
+
+func (m AppModel) openDashboard() (tea.Model, tea.Cmd) {
+	if !tmux.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
+		return m, nil
+	}
+
+	sessions, _ := tmux.ListVibemuxSessions()
+	names := tmux.DashboardSessions(sessions)
+	if len(names) == 0 {
+		return m, m.projectList.StatusMessage("no active sessions")
+	}
+
+	// Rebuild from scratch so the grid always matches the active sessions.
+	tmux.KillSession(tmux.DashboardSession)
+	if err := tmux.BuildDashboard(names); err != nil {
+		fmt.Fprintf(os.Stderr, "Error building dashboard: %v\n", err)
+		return m, nil
+	}
+
+	cmd := tea.ExecProcess(tmux.AttachCommand(tmux.DashboardSession), func(err error) tea.Msg {
 		return TmuxReturnedMsg{Err: err}
 	})
 	return m, cmd
