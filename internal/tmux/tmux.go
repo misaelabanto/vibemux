@@ -1,9 +1,11 @@
 package tmux
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -17,6 +19,64 @@ func SessionName(projectPath string) string {
 		return sessionPrefix + "unknown"
 	}
 	return sessionPrefix + base
+}
+
+// DashboardSession is the tmux session name for the all-sessions dashboard.
+const DashboardSession = sessionPrefix + "dashboard"
+
+// nestedAttachCommand returns the shell command a dashboard pane runs to
+// attach a nested tmux client to the named session. TMUX= clears the env var
+// so tmux allows nesting, and exec ties the pane lifetime to the inner client
+// so the pane closes automatically when the session dies.
+func nestedAttachCommand(name string) string {
+	return "TMUX= exec tmux attach-session -t '" + exactTarget(name) + "'"
+}
+
+// DashboardSessions takes the active vibemux session set and returns the
+// sessions the dashboard should display: everything except the dashboard
+// itself, sorted alphabetically for stable pane order.
+func DashboardSessions(active map[string]bool) []string {
+	names := make([]string, 0, len(active))
+	for name := range active {
+		if name != DashboardSession {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// BuildDashboard creates a detached vmx-dashboard session containing one
+// nested-client pane per given session, in the order given, tiled. On any
+// failure the half-built dashboard is killed and the error returned. The
+// caller is responsible for killing any pre-existing dashboard first.
+func BuildDashboard(sessions []string) error {
+	if len(sessions) == 0 {
+		return errors.New("no sessions to show")
+	}
+
+	// split-window and select-layout take a pane target, where a bare
+	// "=name" only resolves as a session; the trailing ":" means "exact
+	// session, current window".
+	windowTarget := exactTarget(DashboardSession) + ":"
+
+	if err := exec.Command("tmux", "new-session", "-d", "-s", DashboardSession, nestedAttachCommand(sessions[0])).Run(); err != nil {
+		return err
+	}
+	for _, name := range sessions[1:] {
+		if err := exec.Command("tmux", "split-window", "-t", windowTarget, nestedAttachCommand(name)).Run(); err != nil {
+			KillSession(DashboardSession)
+			return err
+		}
+		// Retile after every split: split-window halves the current pane, so
+		// without rebalancing a handful of sessions hits "pane too small".
+		_ = exec.Command("tmux", "select-layout", "-t", windowTarget, "tiled").Run()
+	}
+	if err := exec.Command("tmux", "select-layout", "-t", windowTarget, "tiled").Run(); err != nil {
+		KillSession(DashboardSession)
+		return err
+	}
+	return nil
 }
 
 // IsInstalled checks whether tmux is available on PATH.
