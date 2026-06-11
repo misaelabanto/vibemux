@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -155,7 +155,7 @@ func (m Model) View() string {
 	if m.showActiveOnly {
 		toggle = "ctrl+a all"
 	}
-	help := fmt.Sprintf("enter open  type filter  %s  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit", toggle)
+	help := fmt.Sprintf("enter open  type filter  %s  ctrl+o dashboard  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit", toggle)
 	if m.numberBuffer != "" {
 		help = fmt.Sprintf("→ %s    ", m.numberBuffer) + help
 	}
@@ -215,6 +215,12 @@ func (m *Model) SetShowActiveOnly(v bool) {
 // ShowActiveOnly reports whether the active-only filter is on.
 func (m Model) ShowActiveOnly() bool {
 	return m.showActiveOnly
+}
+
+// StatusMessage shows a transient status message in the list (e.g. when the
+// dashboard has nothing to show).
+func (m *Model) StatusMessage(s string) tea.Cmd {
+	return m.list.NewStatusMessage(s)
 }
 
 func (m *Model) syncTitle() {
