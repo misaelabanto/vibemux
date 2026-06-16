@@ -8,9 +8,9 @@ import (
 
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/model"
-	"github.com/misaelabanto/vibemux/internal/tmux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
+	"github.com/misaelabanto/vibemux/internal/zellij"
 )
 
 func (m AppModel) Init() tea.Cmd {
@@ -19,8 +19,8 @@ func (m AppModel) Init() tea.Cmd {
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case TmuxReturnedMsg:
-		// User detached or session ended — return to project list.
+	case MultiplexerReturnedMsg:
+		// User detached or session ended: return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
 		prevActiveOnly := m.projectList.ShowActiveOnly()
@@ -79,7 +79,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
+					zellij.KillSession(zellij.SessionName(p.Path))
 					config.RemoveProject(p.ID)
 					projects, _ := config.LoadProjects()
 					m.projects = projects
@@ -88,7 +88,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "ctrl+x":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
+					zellij.KillSession(zellij.SessionName(p.Path))
 					return m, refreshSessionStatus()
 				}
 			case "ctrl+a":
@@ -142,66 +142,86 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	config.TouchProject(p.ID)
 
-	if !tmux.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
+	if !zellij.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "zellij is not installed\n")
 		return m, nil
 	}
 
-	name := tmux.SessionName(p.Path)
+	name := zellij.SessionName(p.Path)
 
-	// Create a new tmux session if one doesn't already exist.
-	if !tmux.HasSession(name) {
-		if err := tmux.NewSession(name, p.Path); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+	// Create a new zellij session if one doesn't already exist.
+	if !zellij.HasSession(name) {
+		if err := zellij.NewSession(name, p.Path); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating zellij session: %v\n", err)
 			return m, nil
 		}
 	}
 
-	cmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
-		return TmuxReturnedMsg{Err: err}
+	cmd := tea.ExecProcess(zellij.AttachCommand(name), func(err error) tea.Msg {
+		return MultiplexerReturnedMsg{Err: err}
 	})
 	return m, cmd
 }
 
+// openDashboard opens the web dashboard: it makes sure the zellij web server
+// is running and opens one browser window per active vibemux session. The TUI
+// stays in the project list the whole time.
 func (m AppModel) openDashboard() (tea.Model, tea.Cmd) {
-	if !tmux.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
+	if !zellij.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "zellij is not installed\n")
 		return m, nil
 	}
 
-	sessions, _ := tmux.ListVibemuxSessions()
-	names := tmux.DashboardSessions(sessions)
+	sessions, _ := zellij.ListVibemuxSessions()
+	names := zellij.DashboardSessions(sessions)
 	if len(names) == 0 {
 		return m, m.projectList.StatusMessage("no active sessions")
 	}
 
-	// Rebuild from scratch so the grid always matches the active sessions.
-	tmux.KillSession(tmux.DashboardSession)
-	if err := tmux.BuildDashboard(names); err != nil {
-		fmt.Fprintf(os.Stderr, "Error building dashboard: %v\n", err)
-		return m, nil
+	if err := zellij.StartWebServer(zellij.DefaultWebPort); err != nil {
+		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", err))
 	}
 
-	cmd := tea.ExecProcess(tmux.AttachCommand(tmux.DashboardSession), func(err error) tea.Msg {
-		return TmuxReturnedMsg{Err: err}
-	})
-	return m, cmd
+	token, created, err := zellij.EnsureWebToken()
+	if err != nil {
+		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", err))
+	}
+
+	var openErr error
+	for _, name := range names {
+		if err := zellij.OpenInBrowser(zellij.SessionURL(zellij.DefaultWebPort, name)); err != nil {
+			openErr = err
+		}
+	}
+	if openErr != nil {
+		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", openErr))
+	}
+
+	status := fmt.Sprintf("dashboard opened in browser (%d sessions)", len(names))
+	if created {
+		// The plaintext token exists only at creation time (zellij stores
+		// hashes), and the status message is transient, so the token is also
+		// printed to stderr the way other errors are surfaced.
+		status = fmt.Sprintf("dashboard opened (%d sessions). zellij web token (shown once): %s", len(names), token)
+		fmt.Fprintf(os.Stderr, "zellij web token (shown once): %s\n", token)
+	}
+	return m, m.projectList.StatusMessage(status)
 }
 
-// refreshSessionStatus returns a Cmd that queries tmux for active vibemux
+// refreshSessionStatus returns a Cmd that queries zellij for active vibemux
 // sessions and sends a SessionStatusMsg.
 func refreshSessionStatus() tea.Cmd {
 	return func() tea.Msg {
-		sessions, _ := tmux.ListVibemuxSessions()
+		sessions, _ := zellij.ListVibemuxSessions()
 		return SessionStatusMsg{ActiveSessions: sessions}
 	}
 }
 
-// mapSessionsToProjects maps tmux session names back to project IDs.
+// mapSessionsToProjects maps zellij session names back to project IDs.
 func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
 	active := map[string]bool{}
 	for _, p := range projects {
-		name := tmux.SessionName(p.Path)
+		name := zellij.SessionName(p.Path)
 		if sessions[name] {
 			active[p.ID] = true
 		}
