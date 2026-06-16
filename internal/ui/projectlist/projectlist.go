@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"charm.land/bubbles/v2/list"
@@ -50,7 +51,7 @@ func (p projectItem) FilterValue() string { return p.Project.Name }
 type Model struct {
 	list           list.Model
 	projects       []model.Project // unfiltered slice, source of truth for buildItems
-	activeSessions map[string]bool // project ID → has active tmux session
+	activeSessions map[string]bool // project ID → has active zellij session
 	showActiveOnly bool
 	width          int
 	height         int
@@ -65,6 +66,9 @@ func New(projects []model.Project, width, height int) Model {
 	l := list.New(items, delegate, width, height-bannerHeight-2)
 	l.Title = "Projects"
 	l.SetShowHelp(true)
+	// The default 1s lifetime is too short to read dashboard results (and the
+	// one-time zellij web token shown on first dashboard use).
+	l.StatusMessageLifetime = 10 * time.Second
 	// Strip single-letter nav bindings so any typed character flows into filter.
 	l.KeyMap.CursorUp.SetKeys("up")
 	l.KeyMap.CursorDown.SetKeys("down")
@@ -181,7 +185,7 @@ func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
 	return m.list.SetItems(m.buildItems())
 }
 
-// SetActiveSessions updates which projects have running tmux sessions and
+// SetActiveSessions updates which projects have running zellij sessions and
 // rebuilds items so the active-only filter (if on) reflects the new set.
 func (m *Model) SetActiveSessions(active map[string]bool) {
 	m.activeSessions = active
@@ -202,7 +206,7 @@ func (m *Model) ToggleActiveOnly() tea.Cmd {
 }
 
 // SetShowActiveOnly preserves the toggle across model rebuilds (e.g. after
-// returning from a tmux session).
+// returning from a zellij session).
 func (m *Model) SetShowActiveOnly(v bool) {
 	if m.showActiveOnly == v {
 		return
