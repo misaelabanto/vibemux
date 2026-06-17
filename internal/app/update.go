@@ -8,13 +8,16 @@ import (
 
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/mux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
-	"github.com/misaelabanto/vibemux/internal/zellij"
 )
 
 func (m AppModel) Init() tea.Cmd {
-	return refreshSessionStatus()
+	if m.mux == nil {
+		return m.onboarding.Init()
+	}
+	return refreshSessionStatus(m.mux)
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -28,10 +31,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
-		return m, refreshSessionStatus()
+		return m, refreshSessionStatus(m.mux)
 
 	case SessionStatusMsg:
-		active := mapSessionsToProjects(msg.ActiveSessions, m.projects)
+		active := mapSessionsToProjects(msg.ActiveSessions, m.projects, m.mux)
 		m.projectList.SetActiveSessions(active)
 		return m, nil
 
@@ -43,6 +46,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.state {
+	case ViewOnboarding:
+		return m.updateOnboarding(msg)
 	case ViewProjectList:
 		return m.updateProjectList(msg)
 	case ViewAddProject:
@@ -50,6 +55,38 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// updateOnboarding routes input to the onboarding sub-model and, once the
+// user has chosen a multiplexer, persists it, builds the backend, and enters
+// the project list. Quitting onboarding exits vibemux (it cannot run without
+// a multiplexer).
+func (m AppModel) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.onboarding, cmd = m.onboarding.Update(msg)
+
+	if m.onboarding.Quit() {
+		return m, tea.Quit
+	}
+
+	if k, ok := m.onboarding.Chosen(); ok {
+		_ = config.SaveSettings(config.Settings{Multiplexer: string(k)})
+		active, err := mux.New(k)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing %s: %v\n", k, err)
+			return m, tea.Quit
+		}
+		m.mux = active
+		m.state = ViewProjectList
+		m.projectList.SetSize(m.width, m.height)
+		return m, tea.Batch(cmd, refreshSessionStatus(m.mux))
+	}
+
+	return m, cmd
 }
 
 func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -79,23 +116,21 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					zellij.KillSession(zellij.SessionName(p.Path))
+					m.mux.KillSession(m.mux.SessionName(p.Path))
 					config.RemoveProject(p.ID)
 					projects, _ := config.LoadProjects()
 					m.projects = projects
 					cmd := m.projectList.SetProjects(projects)
-					return m, tea.Batch(cmd, refreshSessionStatus())
+					return m, tea.Batch(cmd, refreshSessionStatus(m.mux))
 				}
 			case "ctrl+x":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					zellij.KillSession(zellij.SessionName(p.Path))
-					return m, refreshSessionStatus()
+					m.mux.KillSession(m.mux.SessionName(p.Path))
+					return m, refreshSessionStatus(m.mux)
 				}
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
 				return m, cmd
-			case "ctrl+o":
-				return m.openDashboard()
 			}
 		}
 	}
@@ -142,86 +177,42 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	config.TouchProject(p.ID)
 
-	if !zellij.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "zellij is not installed\n")
+	if !m.mux.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "%s is not installed\n", m.mux.Name())
 		return m, nil
 	}
 
-	name := zellij.SessionName(p.Path)
+	name := m.mux.SessionName(p.Path)
 
-	// Create a new zellij session if one doesn't already exist.
-	if !zellij.HasSession(name) {
-		if err := zellij.NewSession(name, p.Path); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating zellij session: %v\n", err)
+	// Create a new session if one doesn't already exist.
+	if !m.mux.HasSession(name) {
+		if err := m.mux.NewSession(name, p.Path); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating %s session: %v\n", m.mux.Name(), err)
 			return m, nil
 		}
 	}
 
-	cmd := tea.ExecProcess(zellij.AttachCommand(name), func(err error) tea.Msg {
+	cmd := tea.ExecProcess(m.mux.AttachCommand(name), func(err error) tea.Msg {
 		return MultiplexerReturnedMsg{Err: err}
 	})
 	return m, cmd
 }
 
-// openDashboard opens the web dashboard: it makes sure the zellij web server
-// is running and opens one browser window per active vibemux session. The TUI
-// stays in the project list the whole time.
-func (m AppModel) openDashboard() (tea.Model, tea.Cmd) {
-	if !zellij.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "zellij is not installed\n")
-		return m, nil
-	}
-
-	sessions, _ := zellij.ListVibemuxSessions()
-	names := zellij.DashboardSessions(sessions)
-	if len(names) == 0 {
-		return m, m.projectList.StatusMessage("no active sessions")
-	}
-
-	if err := zellij.StartWebServer(zellij.DefaultWebPort); err != nil {
-		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", err))
-	}
-
-	token, created, err := zellij.EnsureWebToken()
-	if err != nil {
-		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", err))
-	}
-
-	var openErr error
-	for _, name := range names {
-		if err := zellij.OpenInBrowser(zellij.SessionURL(zellij.DefaultWebPort, name)); err != nil {
-			openErr = err
-		}
-	}
-	if openErr != nil {
-		return m, m.projectList.StatusMessage(fmt.Sprintf("dashboard error: %v", openErr))
-	}
-
-	status := fmt.Sprintf("dashboard opened in browser (%d sessions)", len(names))
-	if created {
-		// The plaintext token exists only at creation time (zellij stores
-		// hashes), and the status message is transient, so the token is also
-		// printed to stderr the way other errors are surfaced.
-		status = fmt.Sprintf("dashboard opened (%d sessions). zellij web token (shown once): %s", len(names), token)
-		fmt.Fprintf(os.Stderr, "zellij web token (shown once): %s\n", token)
-	}
-	return m, m.projectList.StatusMessage(status)
-}
-
-// refreshSessionStatus returns a Cmd that queries zellij for active vibemux
-// sessions and sends a SessionStatusMsg.
-func refreshSessionStatus() tea.Cmd {
+// refreshSessionStatus returns a Cmd that queries the active multiplexer for
+// active vibemux sessions and sends a SessionStatusMsg.
+func refreshSessionStatus(mx mux.Multiplexer) tea.Cmd {
 	return func() tea.Msg {
-		sessions, _ := zellij.ListVibemuxSessions()
+		sessions, _ := mx.ListVibemuxSessions()
 		return SessionStatusMsg{ActiveSessions: sessions}
 	}
 }
 
-// mapSessionsToProjects maps zellij session names back to project IDs.
-func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
+// mapSessionsToProjects maps live multiplexer session names back to project
+// IDs.
+func mapSessionsToProjects(sessions map[string]bool, projects []model.Project, mx mux.Multiplexer) map[string]bool {
 	active := map[string]bool{}
 	for _, p := range projects {
-		name := zellij.SessionName(p.Path)
+		name := mx.SessionName(p.Path)
 		if sessions[name] {
 			active[p.ID] = true
 		}
