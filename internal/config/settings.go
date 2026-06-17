@@ -1,8 +1,6 @@
 package config
 
 import (
-	"encoding/json"
-	"os"
 	"path/filepath"
 )
 
@@ -20,30 +18,10 @@ func SettingsFile() string {
 // LoadSettings reads settings.json. A missing file is not an error: it
 // returns the zero Settings (no multiplexer chosen yet).
 func LoadSettings() (Settings, error) {
-	data, err := os.ReadFile(SettingsFile())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return Settings{}, nil
-		}
-		return Settings{}, err
-	}
-
-	var s Settings
-	if err := json.Unmarshal(data, &s); err != nil {
-		return Settings{}, err
-	}
-	return s, nil
+	return readJSON[Settings](SettingsFile())
 }
 
 // SaveSettings writes settings.json, creating the config dir if needed.
 func SaveSettings(s Settings) error {
-	if err := EnsureDir(); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(SettingsFile(), data, 0o644)
+	return writeJSON(SettingsFile(), s)
 }

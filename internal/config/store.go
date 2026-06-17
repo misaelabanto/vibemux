@@ -1,8 +1,6 @@
 package config
 
 import (
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -12,35 +10,11 @@ import (
 )
 
 func LoadProjects() ([]model.Project, error) {
-	if err := EnsureDir(); err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(ProjectsFile())
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var projects []model.Project
-	if err := json.Unmarshal(data, &projects); err != nil {
-		return nil, err
-	}
-	return projects, nil
+	return readJSON[[]model.Project](ProjectsFile())
 }
 
 func SaveProjects(projects []model.Project) error {
-	if err := EnsureDir(); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(projects, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(ProjectsFile(), data, 0o644)
+	return writeJSON(ProjectsFile(), projects)
 }
 
 func AddProject(path string) (model.Project, error) {
