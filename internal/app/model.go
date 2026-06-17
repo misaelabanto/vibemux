@@ -16,6 +16,13 @@ const (
 	ViewOnboarding
 )
 
+// defaultWidth and defaultHeight seed the model before bubbletea delivers the
+// first WindowSizeMsg, which immediately overrides them with the real size.
+const (
+	defaultWidth  = 80
+	defaultHeight = 24
+)
+
 type AppModel struct {
 	state       ViewState
 	projectList projectlist.Model
@@ -32,11 +39,11 @@ type AppModel struct {
 // otherwise it starts in the project list with active wired in.
 func NewAppModel(projects []model.Project, active mux.Multiplexer, installed []mux.Kind) AppModel {
 	m := AppModel{
-		projectList: projectlist.New(projects, 80, 24),
+		projectList: projectlist.New(projects, defaultWidth, defaultHeight),
 		projects:    projects,
 		mux:         active,
-		width:       80,
-		height:      24,
+		width:       defaultWidth,
+		height:      defaultHeight,
 	}
 	if active == nil {
 		m.state = ViewOnboarding

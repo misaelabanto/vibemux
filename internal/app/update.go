@@ -14,10 +14,14 @@ import (
 )
 
 func (m AppModel) Init() tea.Cmd {
-	if m.mux == nil {
+	// Dispatch on the authoritative view state, like Update and View, rather
+	// than re-deriving it from whether the mux is nil.
+	switch m.state {
+	case ViewOnboarding:
 		return m.onboarding.Init()
+	default:
+		return refreshSessionStatus(m.mux)
 	}
-	return refreshSessionStatus(m.mux)
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
