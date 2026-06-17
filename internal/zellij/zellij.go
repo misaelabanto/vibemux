@@ -87,8 +87,14 @@ func (Backend) HasSession(name string) bool {
 // working directory. The working directory is set both on the process (zellij
 // has no --cwd flag for session creation) and via the options subcommand so
 // panes opened later in the session also start there.
+//
+// session-serialization is turned off for the session: zellij otherwise
+// serializes sessions to disk and resurrects them as EXITED after they end,
+// so a session the user exited would come back. vibemux wants tmux-like
+// semantics where exiting or killing a session ends it for good.
 func (Backend) NewSession(name, dir string) error {
-	cmd := command("attach", "--create-background", name, "options", "--default-cwd", dir)
+	cmd := command("attach", "--create-background", name, "options",
+		"--default-cwd", dir, "--session-serialization", "false")
 	cmd.Dir = dir
 	return cmd.Run()
 }
