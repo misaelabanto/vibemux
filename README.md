@@ -103,12 +103,14 @@ Ctrl+p n       Open a new pane
 Ctrl+p x       Close the focused pane
 ```
 
+For tmux, detach with `Ctrl+b d`.
+
 zellij shows its keybinding hints in the on-screen status bar. See the zellij
 documentation for the full reference.
 
 ### Session behavior
 
-- **Detach** (`Ctrl+o d`): Returns you to the vibemux project list. The shell process continues running in the background with full state preserved.
+- **Detach** (`Ctrl+o d` for zellij / `Ctrl+b d` for tmux): Returns you to the vibemux project list. The shell process continues running in the background with full state preserved.
 - **Reattach**: Select the same project again to reconnect to the background session. Everything you left running is still there.
 - **Kill** (`ctrl+x` from project list): Terminates the multiplexer session. Reopening the project starts a fresh session.
 - **Quit** (`ctrl+c` from project list): Exits vibemux. All multiplexer sessions persist and can be reattached later.
