@@ -51,7 +51,7 @@ func (p projectItem) FilterValue() string { return p.Project.Name }
 type Model struct {
 	list           list.Model
 	projects       []model.Project // unfiltered slice, source of truth for buildItems
-	activeSessions map[string]bool // project ID → has active zellij session
+	activeSessions map[string]bool // project ID -> has active multiplexer session
 	showActiveOnly bool
 	width          int
 	height         int
@@ -159,7 +159,7 @@ func (m Model) View() string {
 	if m.showActiveOnly {
 		toggle = "ctrl+a all"
 	}
-	help := fmt.Sprintf("enter open  type filter  %s  ctrl+o dashboard  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit", toggle)
+	help := fmt.Sprintf("enter open  type filter  %s  ctrl+n add  ctrl+d delete  ctrl+x kill  ctrl+c quit", toggle)
 	if m.numberBuffer != "" {
 		help = fmt.Sprintf("→ %s    ", m.numberBuffer) + help
 	}
@@ -185,8 +185,8 @@ func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
 	return m.list.SetItems(m.buildItems())
 }
 
-// SetActiveSessions updates which projects have running zellij sessions and
-// rebuilds items so the active-only filter (if on) reflects the new set.
+// SetActiveSessions updates which projects have running multiplexer sessions
+// and rebuilds items so the active-only filter (if on) reflects the new set.
 func (m *Model) SetActiveSessions(active map[string]bool) {
 	m.activeSessions = active
 	m.list.SetItems(m.buildItems())
