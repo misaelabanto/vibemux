@@ -14,11 +14,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/ui/styles"
 )
 
-var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+var helpStyle = styles.Muted
 
-var bannerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+var bannerStyle = styles.Accent
 
 const banner = "" +
 	" __  __      __                                         \n" +

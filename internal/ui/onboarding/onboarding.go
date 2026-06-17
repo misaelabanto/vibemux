@@ -5,16 +5,16 @@ import (
 	"runtime"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/misaelabanto/vibemux/internal/mux"
+	"github.com/misaelabanto/vibemux/internal/ui/styles"
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	cursorStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	titleStyle  = styles.Accent
+	cursorStyle = styles.Accent
+	dimStyle    = styles.Muted
+	helpStyle   = styles.Muted
 )
 
 type state int

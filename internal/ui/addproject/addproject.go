@@ -9,16 +9,16 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/misaelabanto/vibemux/internal/gitops"
+	"github.com/misaelabanto/vibemux/internal/ui/styles"
 )
 
 var (
-	cursorStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	errorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	cursorStyle = styles.Accent
+	dimStyle    = styles.Muted
+	helpStyle   = styles.Muted
+	errorStyle  = styles.Error
 )
 
 type step int
