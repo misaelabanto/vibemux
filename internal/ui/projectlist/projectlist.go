@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 	"unicode"
 
 	"charm.land/bubbles/v2/list"
@@ -66,9 +65,6 @@ func New(projects []model.Project, width, height int) Model {
 	l := list.New(items, delegate, width, height-bannerHeight-2)
 	l.Title = "Projects"
 	l.SetShowHelp(true)
-	// The default 1s lifetime is too short to read dashboard results (and the
-	// one-time zellij web token shown on first dashboard use).
-	l.StatusMessageLifetime = 10 * time.Second
 	// Strip single-letter nav bindings so any typed character flows into filter.
 	l.KeyMap.CursorUp.SetKeys("up")
 	l.KeyMap.CursorDown.SetKeys("down")
@@ -206,7 +202,7 @@ func (m *Model) ToggleActiveOnly() tea.Cmd {
 }
 
 // SetShowActiveOnly preserves the toggle across model rebuilds (e.g. after
-// returning from a zellij session).
+// returning from a multiplexer session).
 func (m *Model) SetShowActiveOnly(v bool) {
 	if m.showActiveOnly == v {
 		return
@@ -219,12 +215,6 @@ func (m *Model) SetShowActiveOnly(v bool) {
 // ShowActiveOnly reports whether the active-only filter is on.
 func (m Model) ShowActiveOnly() bool {
 	return m.showActiveOnly
-}
-
-// StatusMessage shows a transient status message in the list (e.g. when the
-// dashboard has nothing to show).
-func (m *Model) StatusMessage(s string) tea.Cmd {
-	return m.list.NewStatusMessage(s)
 }
 
 func (m *Model) syncTitle() {
