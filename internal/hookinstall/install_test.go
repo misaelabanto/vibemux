@@ -192,12 +192,19 @@ func TestInstallIdempotent(t *testing.T) {
 
 // TestUninstallRemovesOnlyOurs verifies that Uninstall removes "vibemux hook"
 // entries but leaves unrelated hooks (e.g., notify-send) in place.
+// It also asserts that:
+//   - an unrelated top-level key ("permissions") survives Uninstall
+//   - an event that contained ONLY "vibemux hook" is deleted (not left as null)
 func TestUninstallRemovesOnlyOurs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 
-	// Write a settings.json with both a notify-send hook and our hook under Stop.
+	// Write a settings.json with:
+	//   - a top-level "permissions" key that must survive
+	//   - Stop: both a notify-send hook and our hook (notify-send must stay)
+	//   - UserPromptSubmit: only our hook (key must be deleted, not nulled)
 	initial := map[string]any{
+		"permissions": map[string]any{"allow": []any{"Bash"}},
 		"hooks": map[string]any{
 			"Stop": []any{
 				map[string]any{
@@ -208,6 +215,16 @@ func TestUninstallRemovesOnlyOurs(t *testing.T) {
 						},
 					},
 				},
+				map[string]any{
+					"hooks": []any{
+						map[string]any{
+							"type":    "command",
+							"command": "vibemux hook",
+						},
+					},
+				},
+			},
+			"UserPromptSubmit": []any{
 				map[string]any{
 					"hooks": []any{
 						map[string]any{
@@ -233,6 +250,12 @@ func TestUninstallRemovesOnlyOurs(t *testing.T) {
 	}
 
 	settings := readSettings(t, dir)
+
+	// Unrelated top-level key must survive.
+	if _, ok := settings["permissions"]; !ok {
+		t.Error("top-level 'permissions' key was removed by Uninstall")
+	}
+
 	stopCmds := commandsForEvent(t, settings, "Stop")
 
 	// notify-send must remain.
@@ -240,9 +263,47 @@ func TestUninstallRemovesOnlyOurs(t *testing.T) {
 		t.Errorf("Stop: notify-send was incorrectly removed; got %v", stopCmds)
 	}
 
-	// Our hook must be gone.
+	// Our hook must be gone from Stop.
 	if containsCmd(stopCmds, "vibemux hook") {
 		t.Errorf("Stop: 'vibemux hook' was NOT removed; got %v", stopCmds)
+	}
+
+	// UserPromptSubmit contained only our hook, so the key must be deleted (not null).
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatal("hooks is not a map after Uninstall")
+	}
+	if val, exists := hooks["UserPromptSubmit"]; exists {
+		t.Errorf("UserPromptSubmit key should be deleted after uninstall, got: %v", val)
+	}
+}
+
+// TestUninstallCreatesBackup verifies that Uninstall backs up settings.json to
+// settings.json.vibemux-bak before modifying it.
+func TestUninstallCreatesBackup(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	clauDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(clauDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"vibemux hook"}]}]}}`)
+	if err := os.WriteFile(filepath.Join(clauDir, "settings.json"), original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := hookinstall.Uninstall(); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+
+	bakPath := filepath.Join(clauDir, "settings.json.vibemux-bak")
+	bak, err := os.ReadFile(bakPath)
+	if err != nil {
+		t.Fatalf("backup not created by Uninstall: %v", err)
+	}
+	if string(bak) != string(original) {
+		t.Errorf("backup content mismatch: got %s, want %s", bak, original)
 	}
 }
 

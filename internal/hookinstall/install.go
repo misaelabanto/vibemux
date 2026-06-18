@@ -169,9 +169,16 @@ func Install(binPath string) error {
 
 // Uninstall removes all hook groups whose command equals "vibemux hook" from
 // ~/.claude/settings.json. Groups that become empty after removal are dropped.
+// Event keys that become empty are deleted from the hooks map.
 // All other hooks and top-level keys are preserved.
 // If the file does not exist, Uninstall is a no-op.
+// A backup of the existing file is written to settings.json.vibemux-bak before
+// any changes are made.
 func Uninstall() error {
+	if err := backupSettings(); err != nil {
+		return err
+	}
+
 	settings, err := loadSettings()
 	if err != nil {
 		return err
@@ -191,7 +198,9 @@ func Uninstall() error {
 
 	const cmd = "vibemux hook"
 
-	for _, event := range requiredEvents {
+	// Iterate over ALL keys present in the hooks map, not just requiredEvents,
+	// so any event that contains a "vibemux hook" command is cleaned up.
+	for event := range hooks {
 		rawGroups, ok := hooks[event]
 		if !ok {
 			continue
@@ -232,7 +241,12 @@ func Uninstall() error {
 			group["hooks"] = keptHooks
 			filtered = append(filtered, group)
 		}
-		hooks[event] = filtered
+		if len(filtered) == 0 {
+			// Delete the event key rather than assigning nil/empty (nil marshals to null).
+			delete(hooks, event)
+		} else {
+			hooks[event] = filtered
+		}
 	}
 
 	return saveSettings(settings)
