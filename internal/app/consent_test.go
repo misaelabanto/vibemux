@@ -6,10 +6,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/tmux"
 )
 
 func TestWithConsentPrompt_SetsStateViewConsent(t *testing.T) {
-	m := NewAppModel([]model.Project{})
+	m := NewAppModel([]model.Project{}, tmux.Backend{}, nil)
 	if m.state != ViewProjectList {
 		t.Fatalf("expected ViewProjectList after NewAppModel, got %v", m.state)
 	}
@@ -26,7 +27,7 @@ func TestWithConsentPrompt_SetsStateViewConsent(t *testing.T) {
 func TestUpdateConsent_NKey_WritesDeclinedMarker(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	m := NewAppModel([]model.Project{}).WithConsentPrompt()
+	m := NewAppModel([]model.Project{}, tmux.Backend{}, nil).WithConsentPrompt()
 
 	if HooksDeclined() {
 		t.Fatal("expected HooksDeclined() to be false before 'n' keypress")
@@ -47,7 +48,7 @@ func TestUpdateConsent_NKey_WritesDeclinedMarker(t *testing.T) {
 func TestUpdateConsent_OtherKey_DismissesWithoutMarker(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	m := NewAppModel([]model.Project{}).WithConsentPrompt()
+	m := NewAppModel([]model.Project{}, tmux.Backend{}, nil).WithConsentPrompt()
 
 	msg := tea.KeyPressMsg{Code: 'q', Text: "q"}
 	result, _ := m.Update(msg)

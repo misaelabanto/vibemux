@@ -10,10 +10,11 @@ import (
 	"github.com/misaelabanto/vibemux/internal/app"
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/hookinstall"
+	"github.com/misaelabanto/vibemux/internal/mux"
 )
 
 func printIcons() {
-	settings := config.LoadSettings()
+	settings, _ := config.LoadSettings()
 
 	fmt.Println("Agent states:")
 	agentKeys := []string{"working", "done", "blocked", "stale", "active", "no_git"}
@@ -90,9 +91,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	m := app.NewAppModel(projects)
-	if installed, _ := hookinstall.IsInstalled(); !installed && !app.HooksDeclined() {
-		m = m.WithConsentPrompt()
+	settings, err := config.LoadSettings()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading settings: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Non-interactive resolve: use the saved multiplexer when it is still
+	// installed; otherwise leave active nil so the app onboards (first run or
+	// self-heal).
+	installed := mux.Installed()
+	var active mux.Multiplexer
+	if k, ok := mux.Active(settings.Multiplexer, installed); ok {
+		active, err = mux.New(k)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing multiplexer: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	m := app.NewAppModel(projects, active, installed)
+	// Show the hook-consent prompt only when no onboarding is needed (a
+	// multiplexer is already active) and the user has neither installed nor
+	// declined the hooks.
+	if active != nil {
+		if hooked, _ := hookinstall.IsInstalled(); !hooked && !app.HooksDeclined() {
+			m = m.WithConsentPrompt()
+		}
 	}
 	p := tea.NewProgram(m)
 

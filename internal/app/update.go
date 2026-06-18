@@ -13,19 +13,27 @@ import (
 	"github.com/misaelabanto/vibemux/internal/gitstatus"
 	"github.com/misaelabanto/vibemux/internal/hookinstall"
 	"github.com/misaelabanto/vibemux/internal/model"
-	"github.com/misaelabanto/vibemux/internal/tmux"
+	"github.com/misaelabanto/vibemux/internal/mux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
 )
 
 func (m AppModel) Init() tea.Cmd {
-	return tea.Batch(computeStatus(m.projects), tick(m.settings))
+	// Dispatch on the authoritative view state. Onboarding has no multiplexer
+	// yet, so it cannot compute status; every other state starts the periodic
+	// status tick loop.
+	switch m.state {
+	case ViewOnboarding:
+		return m.onboarding.Init()
+	default:
+		return tea.Batch(computeStatus(m.projects, m.mux), tick(m.settings))
+	}
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case TmuxReturnedMsg:
-		// User detached or the session ended. Return to project list.
+	case MultiplexerReturnedMsg:
+		// User detached or the session ended: return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
 		prevActiveOnly := m.projectList.ShowActiveOnly()
@@ -33,7 +41,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetSettings(m.settings)
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.state = ViewProjectList
-		return m, computeStatus(m.projects)
+		return m, computeStatus(m.projects, m.mux)
 
 	case StatusComputedMsg:
 		m.projectList.SetActiveSessions(msg.Active)
@@ -42,10 +50,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case TickMsg:
-		return m, tea.Batch(computeStatus(m.projects), tick(m.settings))
+		return m, tea.Batch(computeStatus(m.projects, m.mux), tick(m.settings))
 
 	case FetchDoneMsg:
-		return m, computeStatus(m.projects)
+		return m, computeStatus(m.projects, m.mux)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -55,6 +63,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.state {
+	case ViewOnboarding:
+		return m.updateOnboarding(msg)
 	case ViewProjectList:
 		return m.updateProjectList(msg)
 	case ViewAddProject:
@@ -66,7 +76,47 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateConsent handles key events in the consent prompt state.
+// updateOnboarding routes input to the onboarding sub-model and, once the
+// user has chosen a multiplexer, persists it, builds the backend, and enters
+// the project list (or the hook-consent prompt on first run). Quitting
+// onboarding exits vibemux (it cannot run without a multiplexer).
+func (m AppModel) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.onboarding, cmd = m.onboarding.Update(msg)
+
+	if m.onboarding.Quit() {
+		return m, tea.Quit
+	}
+
+	if k, ok := m.onboarding.Chosen(); ok {
+		// Load, modify, save so the status-display settings are preserved.
+		s, _ := config.LoadSettings()
+		s.Multiplexer = string(k)
+		_ = config.SaveSettings(s)
+
+		active, err := mux.New(k)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing %s: %v\n", k, err)
+			return m, tea.Quit
+		}
+		m.mux = active
+		if needsConsent() {
+			m.state = ViewConsent
+		} else {
+			m.state = ViewProjectList
+		}
+		m.projectList.SetSize(m.width, m.height)
+		return m, tea.Batch(cmd, computeStatus(m.projects, m.mux), tick(m.settings))
+	}
+
+	return m, cmd
+}
+
+// updateConsent handles key events in the hook-consent prompt state.
 func (m AppModel) updateConsent(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
@@ -78,7 +128,7 @@ func (m AppModel) updateConsent(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		_ = hookinstall.Install("vibemux")
 		m.state = ViewProjectList
-		return m, computeStatus(m.projects)
+		return m, computeStatus(m.projects, m.mux)
 	case "n", "N":
 		_ = setHooksDeclined()
 		m.state = ViewProjectList
@@ -116,17 +166,17 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
+					m.mux.KillSession(m.mux.SessionName(p.Path))
 					config.RemoveProject(p.ID)
 					projects, _ := config.LoadProjects()
 					m.projects = projects
 					cmd := m.projectList.SetProjects(projects)
-					return m, tea.Batch(cmd, computeStatus(m.projects))
+					return m, tea.Batch(cmd, computeStatus(m.projects, m.mux))
 				}
 			case "ctrl+x":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
-					return m, computeStatus(m.projects)
+					m.mux.KillSession(m.mux.SessionName(p.Path))
+					return m, computeStatus(m.projects, m.mux)
 				}
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
@@ -177,23 +227,23 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	config.TouchProject(p.ID)
 
-	if !tmux.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
+	if !m.mux.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "%s is not installed\n", m.mux.Name())
 		return m, nil
 	}
 
-	name := tmux.SessionName(p.Path)
+	name := m.mux.SessionName(p.Path)
 
-	// Create a new tmux session if one doesn't already exist.
-	if !tmux.HasSession(name) {
-		if err := tmux.NewSession(name, p.Path); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+	// Create a new session if one doesn't already exist.
+	if !m.mux.HasSession(name) {
+		if err := m.mux.NewSession(name, p.Path); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating %s session: %v\n", m.mux.Name(), err)
 			return m, nil
 		}
 	}
 
-	execCmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
-		return TmuxReturnedMsg{Err: err}
+	execCmd := tea.ExecProcess(m.mux.AttachCommand(name), func(err error) tea.Msg {
+		return MultiplexerReturnedMsg{Err: err}
 	})
 
 	if m.settings.FetchOnEnter {
@@ -222,13 +272,17 @@ func tick(s config.Settings) tea.Cmd {
 }
 
 // computeStatus is a tea.Cmd that, off the UI goroutine, computes the full
-// local status: active tmux sessions, agent statuses grouped per project (only
-// for active projects), and git status per project.
-func computeStatus(projects []model.Project) tea.Cmd {
+// local status: active multiplexer sessions, agent statuses grouped per
+// project (only for active projects), and git status per project.
+func computeStatus(projects []model.Project, mx mux.Multiplexer) tea.Cmd {
 	return func() tea.Msg {
-		// Collect active tmux sessions.
-		sessions, _ := tmux.ListVibemuxSessions()
-		active := mapSessionsToProjects(sessions, projects)
+		if mx == nil {
+			return StatusComputedMsg{}
+		}
+
+		// Collect active multiplexer sessions.
+		sessions, _ := mx.ListVibemuxSessions()
+		active := mapSessionsToProjects(sessions, projects, mx)
 
 		// Load all agent statuses and group them by project.
 		statuses, _ := agent.LoadAll()
@@ -256,11 +310,12 @@ func computeStatus(projects []model.Project) tea.Cmd {
 	}
 }
 
-// mapSessionsToProjects maps tmux session names back to project IDs.
-func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
+// mapSessionsToProjects maps live multiplexer session names back to project
+// IDs.
+func mapSessionsToProjects(sessions map[string]bool, projects []model.Project, mx mux.Multiplexer) map[string]bool {
 	active := map[string]bool{}
 	for _, p := range projects {
-		name := tmux.SessionName(p.Path)
+		name := mx.SessionName(p.Path)
 		if sessions[name] {
 			active[p.ID] = true
 		}

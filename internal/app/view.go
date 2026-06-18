@@ -20,6 +20,8 @@ func (m AppModel) View() tea.View {
 		content = m.addProject.View()
 	case ViewConsent:
 		content = consentPrompt
+	case ViewOnboarding:
+		content = m.onboarding.View()
 	}
 
 	v := tea.NewView(content)

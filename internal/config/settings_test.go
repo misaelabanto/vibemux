@@ -51,11 +51,12 @@ func TestDefaultSettings_Numerics(t *testing.T) {
 }
 
 func TestLoadSettings_NoFile_ReturnsDefaults(t *testing.T) {
-	// Point config dir to a temp dir with no config.json
-	tmp := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmp)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
-	s := LoadSettings()
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings() error: %v", err)
+	}
 	def := DefaultSettings()
 
 	if s.LocalRefreshMS != def.LocalRefreshMS {
@@ -75,7 +76,6 @@ func TestLoadSettings_NoFile_ReturnsDefaults(t *testing.T) {
 }
 
 func TestLoadSettings_PartialFile_MergesOverDefaults(t *testing.T) {
-	// Write a config.json that only sets icons.working
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
@@ -84,7 +84,7 @@ func TestLoadSettings_PartialFile_MergesOverDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	partial := map[string]interface{}{
+	partial := map[string]any{
 		"icons": map[string]string{
 			"working": "W",
 		},
@@ -93,18 +93,19 @@ func TestLoadSettings_PartialFile_MergesOverDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(vibemuxDir, "config.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vibemuxDir, "settings.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	s := LoadSettings()
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings() error: %v", err)
+	}
 	def := DefaultSettings()
 
-	// Overridden value
 	if s.Icons["working"] != "W" {
 		t.Errorf("Icons[\"working\"] = %q, want \"W\"", s.Icons["working"])
 	}
-	// Other icon keys keep defaults
 	for key, want := range def.Icons {
 		if key == "working" {
 			continue
@@ -113,7 +114,6 @@ func TestLoadSettings_PartialFile_MergesOverDefaults(t *testing.T) {
 			t.Errorf("Icons[%q] = %q, want default %q", key, got, want)
 		}
 	}
-	// Numeric defaults preserved
 	if s.LocalRefreshMS != def.LocalRefreshMS {
 		t.Errorf("LocalRefreshMS = %d, want %d", s.LocalRefreshMS, def.LocalRefreshMS)
 	}
@@ -125,13 +125,42 @@ func TestLoadSettings_PartialFile_MergesOverDefaults(t *testing.T) {
 	}
 }
 
-func TestConfigFile(t *testing.T) {
+func TestSettingsFile(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmp)
 
-	got := ConfigFile()
-	want := filepath.Join(tmp, "vibemux", "config.json")
+	got := SettingsFile()
+	want := filepath.Join(tmp, "vibemux", "settings.json")
 	if got != want {
-		t.Errorf("ConfigFile() = %q, want %q", got, want)
+		t.Errorf("SettingsFile() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadSettingsMissing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings() error: %v", err)
+	}
+	if s.Multiplexer != "" {
+		t.Errorf("Multiplexer = %q, want empty for missing file", s.Multiplexer)
+	}
+}
+
+func TestSaveLoadSettingsRoundTrip(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	save := DefaultSettings()
+	save.Multiplexer = "zellij"
+	if err := SaveSettings(save); err != nil {
+		t.Fatalf("SaveSettings() error: %v", err)
+	}
+	s, err := LoadSettings()
+	if err != nil {
+		t.Fatalf("LoadSettings() error: %v", err)
+	}
+	if s.Multiplexer != "zellij" {
+		t.Errorf("Multiplexer = %q, want %q", s.Multiplexer, "zellij")
 	}
 }

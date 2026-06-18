@@ -7,6 +7,7 @@ import (
 	"github.com/misaelabanto/vibemux/internal/agent"
 	"github.com/misaelabanto/vibemux/internal/gitstatus"
 	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/tmux"
 )
 
 func tempXDGDir(t *testing.T) string {
@@ -24,7 +25,7 @@ func TestComputeStatusReturnsMsg(t *testing.T) {
 		{ID: "p1", Name: "proj1", Path: t.TempDir()},
 	}
 
-	cmd := computeStatus(projects)
+	cmd := computeStatus(projects, tmux.Backend{})
 	if cmd == nil {
 		t.Fatal("computeStatus returned nil cmd")
 	}
@@ -56,7 +57,7 @@ func TestUpdateStatusComputedMsg(t *testing.T) {
 		{ID: "p1", Name: "proj1", Path: t.TempDir()},
 	}
 
-	m := NewAppModel(projects)
+	m := NewAppModel(projects, tmux.Backend{}, nil)
 
 	active := map[string]bool{"p1": true}
 	agents := map[string][]agent.Status{
@@ -94,7 +95,7 @@ func TestUpdateStatusComputedMsg(t *testing.T) {
 func TestUpdateTickMsgReturnsBatch(t *testing.T) {
 	tempXDGDir(t)
 	projects := []model.Project{}
-	m := NewAppModel(projects)
+	m := NewAppModel(projects, tmux.Backend{}, nil)
 
 	result, cmd := m.Update(TickMsg{})
 	if result == nil {
