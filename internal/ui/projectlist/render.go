@@ -9,18 +9,19 @@ import (
 	"github.com/misaelabanto/vibemux/internal/gitstatus"
 )
 
-// Git status glyphs. These are literal Unicode constants and are NOT taken from Settings.
+// Git status glyphs. These are Nerd Font octicons (the U+F400 block, stable
+// across Nerd Fonts v2/v3) and are NOT taken from Settings. They require a
+// patched Nerd Font in the terminal to render.
 const (
-	glyphStaged    = "●"
-	glyphModified  = "✚"
-	glyphUntracked = "…"
-	glyphStashed   = "⚑"
-	glyphConflict  = "✖"
-	glyphAhead     = "↑"
-	glyphBehind    = "↓"
-	glyphDiverged  = "<>"
-	glyphInSync    = "="
-	glyphClean     = "✔"
+	glyphStaged    = "" // nf-oct-diff_added
+	glyphModified  = "" // nf-oct-diff_modified
+	glyphUntracked = "" // nf-oct-question
+	glyphStashed   = "" // nf-oct-archive
+	glyphConflict  = "" // nf-oct-alert
+	glyphAhead     = "" // nf-oct-arrow_up
+	glyphBehind    = "" // nf-oct-arrow_down
+	glyphDiverged  = "" // nf-oct-git_compare
+	glyphClean     = "" // nf-oct-check
 )
 
 // AgentIcon returns the icon for the given agent state from the settings Icons map.
@@ -34,9 +35,10 @@ func AgentIcon(state agent.State, s config.Settings) string {
 	}
 }
 
-// upstreamToken returns the upstream divergence glyph for a status, or "" if HasUpstream is false.
-// Returns glyphDiverged if both Ahead>0 and Behind>0, glyphAhead if only ahead,
-// glyphBehind if only behind, or glyphInSync if in sync.
+// upstreamToken returns the upstream divergence glyph for a status, or "" if
+// HasUpstream is false or the branch is level with its upstream (nothing to
+// show when in sync). Returns glyphDiverged if both Ahead>0 and Behind>0,
+// glyphAhead if only ahead, or glyphBehind if only behind.
 func upstreamToken(g gitstatus.Status) string {
 	if !g.HasUpstream {
 		return ""
@@ -49,7 +51,7 @@ func upstreamToken(g gitstatus.Status) string {
 	case g.Behind > 0:
 		return glyphBehind
 	default:
-		return glyphInSync
+		return ""
 	}
 }
 

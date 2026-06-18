@@ -78,7 +78,8 @@ func TestGitBadge_CleanInSync(t *testing.T) {
 		Behind:      0,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✔ ="
+	// In sync with upstream shows no extra token, just the clean glyph.
+	want := glyphClean
 	if got != want {
 		t.Errorf("GitBadge(clean+insync) = %q, want %q", got, want)
 	}
@@ -91,7 +92,7 @@ func TestGitBadge_CleanNoUpstream(t *testing.T) {
 		HasUpstream: false,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✔"
+	want := glyphClean
 	if got != want {
 		t.Errorf("GitBadge(clean+no-upstream) = %q, want %q", got, want)
 	}
@@ -106,7 +107,7 @@ func TestGitBadge_CleanAhead(t *testing.T) {
 		Behind:      0,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✔ ↑"
+	want := glyphClean + " " + glyphAhead
 	if got != want {
 		t.Errorf("GitBadge(clean+ahead) = %q, want %q", got, want)
 	}
@@ -121,7 +122,7 @@ func TestGitBadge_CleanBehind(t *testing.T) {
 		Behind:      3,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✔ ↓"
+	want := glyphClean + " " + glyphBehind
 	if got != want {
 		t.Errorf("GitBadge(clean+behind) = %q, want %q", got, want)
 	}
@@ -136,7 +137,7 @@ func TestGitBadge_CleanDiverged(t *testing.T) {
 		Behind:      2,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✔ <>"
+	want := glyphClean + " " + glyphDiverged
 	if got != want {
 		t.Errorf("GitBadge(clean+diverged) = %q, want %q", got, want)
 	}
@@ -153,7 +154,7 @@ func TestGitBadge_StagedUntrackedAhead(t *testing.T) {
 		Behind:      0,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "● … ↑"
+	want := glyphStaged + " " + glyphUntracked + " " + glyphAhead
 	if got != want {
 		t.Errorf("GitBadge(staged+untracked+ahead) = %q, want %q", got, want)
 	}
@@ -168,7 +169,7 @@ func TestGitBadge_BothAheadAndBehind(t *testing.T) {
 		Behind:      3,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "<>"
+	want := glyphDiverged
 	if got != want {
 		t.Errorf("GitBadge(ahead+behind) = %q, want %q", got, want)
 	}
@@ -188,7 +189,8 @@ func TestGitBadge_AllDirtyFlags(t *testing.T) {
 		Behind:      0,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "● ✚ … ⚑ ✖ ="
+	// In sync with upstream adds no trailing token.
+	want := glyphStaged + " " + glyphModified + " " + glyphUntracked + " " + glyphStashed + " " + glyphConflict
 	if got != want {
 		t.Errorf("GitBadge(all-dirty+insync) = %q, want %q", got, want)
 	}
@@ -204,7 +206,7 @@ func TestGitBadge_ModifiedBehind(t *testing.T) {
 		Behind:      1,
 	}
 	got := GitBadge(g, defaultSettings)
-	want := "✚ ↓"
+	want := glyphModified + " " + glyphBehind
 	if got != want {
 		t.Errorf("GitBadge(modified+behind) = %q, want %q", got, want)
 	}
@@ -266,7 +268,7 @@ func TestStatusLine_EmptyGitWithAgent(t *testing.T) {
 		Behind:      0,
 	}
 	got := StatusLine(agent.Status{State: agent.Working}, agent.Working, 0, g, true, defaultSettings)
-	wantGit := "✔ ="
+	wantGit := glyphClean
 	wantAgent := defaultSettings.Icons["working"]
 	want := wantGit + "  " + wantAgent
 	if got != want {
@@ -281,7 +283,7 @@ func TestStatusLine_GitOnlyNoBothParts(t *testing.T) {
 		Clean:  true,
 	}
 	got := StatusLine(agent.Status{}, agent.State(""), 0, g, false, defaultSettings)
-	want := "✔"
+	want := glyphClean
 	if got != want {
 		t.Errorf("StatusLine(git-only) = %q, want %q", got, want)
 	}

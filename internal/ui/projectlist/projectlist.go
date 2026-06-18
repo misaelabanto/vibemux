@@ -60,29 +60,23 @@ func (p projectItem) Title() string {
 }
 
 func (p projectItem) Description() string { return p.message }
-func (p projectItem) FilterValue() string { return p.Project.Name }
 
-// titleWithStatus builds the full title line including the right-aligned
-// status cluster. listWidth is the inner width of the list widget.
+// FilterValue feeds the list's fuzzy filter. It includes both the project name
+// and its full path so a query can match a custom name, the leaf directory, or
+// any parent directory in the path.
+func (p projectItem) FilterValue() string { return p.Project.Name + " " + p.Project.Path }
+
+// titleWithStatus builds the full title line with the status cluster placed
+// inline, right after the project name. listWidth is the inner width of the
+// list widget; it is accepted for signature stability but no longer used for
+// right-alignment padding.
 func (p projectItem) titleWithStatus(listWidth int, s *list.DefaultDelegate) string {
 	left := p.Title()
 	right := StatusLine(p.focused.status, p.focused.derived, p.focused.otherCount, p.git, p.active, p.settings)
 	if right == "" {
 		return left
 	}
-
-	// Calculate available padding: account for delegate left/right padding.
-	paddingLeft := s.Styles.NormalTitle.GetPaddingLeft()
-	paddingRight := s.Styles.NormalTitle.GetPaddingRight()
-	innerWidth := listWidth - paddingLeft - paddingRight
-
-	leftVis := ansi.StringWidth(left)
-	rightVis := ansi.StringWidth(right)
-	pad := innerWidth - leftVis - rightVis
-	if pad < 1 {
-		pad = 1
-	}
-	return left + strings.Repeat(" ", pad) + right
+	return left + "  " + right
 }
 
 type Model struct {
@@ -273,9 +267,12 @@ func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
 
 // SetActiveSessions updates which projects have running multiplexer sessions
 // and rebuilds items so the active-only filter (if on) reflects the new set.
-func (m *Model) SetActiveSessions(active map[string]bool) {
+// The returned cmd MUST be run: when a filter is active, SetItems clears the
+// filtered view and returns a cmd that recomputes it; dropping the cmd leaves
+// the list stuck on "no results matched".
+func (m *Model) SetActiveSessions(active map[string]bool) tea.Cmd {
 	m.activeSessions = active
-	m.list.SetItems(m.buildItems())
+	return m.list.SetItems(m.buildItems())
 }
 
 // ActiveSessions returns the current active sessions map.
@@ -286,7 +283,9 @@ func (m Model) ActiveSessions() map[string]bool {
 // SetAgents stores the per-project agent slices. The caller should pass
 // urgency-sorted slices; SetAgents re-sorts them here as a safety measure.
 // Per-project focused index is reset to 0 (most urgent) on each call.
-func (m *Model) SetAgents(byProj map[string][]agent.Status) {
+// The returned cmd MUST be run so an active filter is recomputed (see
+// SetActiveSessions).
+func (m *Model) SetAgents(byProj map[string][]agent.Status) tea.Cmd {
 	m.agentsByProj = make(map[string][]agent.Status, len(byProj))
 	m.focusedAgent = make(map[string]int, len(byProj))
 	threshold := time.Duration(m.settings.StaleThresholdSec) * time.Second
@@ -296,13 +295,15 @@ func (m *Model) SetAgents(byProj map[string][]agent.Status) {
 		// Reset focus to 0 so the most urgent is always default.
 		m.focusedAgent[id] = 0
 	}
-	m.list.SetItems(m.buildItems())
+	return m.list.SetItems(m.buildItems())
 }
 
-// SetGitStatus stores git status keyed by project ID and rebuilds items.
-func (m *Model) SetGitStatus(byProj map[string]gitstatus.Status) {
+// SetGitStatus stores git status keyed by project ID and rebuilds items. The
+// returned cmd MUST be run so an active filter is recomputed (see
+// SetActiveSessions).
+func (m *Model) SetGitStatus(byProj map[string]gitstatus.Status) tea.Cmd {
 	m.gitByProj = byProj
-	m.list.SetItems(m.buildItems())
+	return m.list.SetItems(m.buildItems())
 }
 
 // SetSettings stores the settings and rebuilds items so icons/thresholds are fresh.
@@ -405,12 +406,11 @@ func (d highlightWhileFilteringDelegate) Render(w io.Writer, m list.Model, index
 	title := pi.titleWithStatus(width, &d.DefaultDelegate)
 	title = ansi.Truncate(title, textwidth, ellipsis)
 
-	// Description: show path on selected row, message otherwise.
-	var desc string
-	if isSelected {
+	// Always show the agent's last message; fall back to the path when the row
+	// has no message (idle, or working with a cleared message) so the line stays useful.
+	desc := pi.message
+	if desc == "" {
 		desc = pi.Project.Path
-	} else {
-		desc = pi.message
 	}
 
 	if d.ShowDescription {
