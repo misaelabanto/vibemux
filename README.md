@@ -1,11 +1,11 @@
 # vibemux
 
-A project-based terminal session manager written in Go with a bubbletea TUI. Launch and manage persistent tmux sessions for your projects — detach without killing, reattach to resume exactly where you left off.
+A project-based terminal session manager written in Go with a bubbletea TUI. Launch and manage persistent tmux sessions for your projects: detach without killing, reattach to resume exactly where you left off.
 
 ## What it does
 
 `vibemux` lets you:
-- **Register project directories** in a persistent config — pick an existing folder, create an empty one, or clone a GitHub repo
+- **Register project directories** in a persistent config: pick an existing folder, create an empty one, or clone a GitHub repo
 - **Open tmux sessions** for projects with a keystroke
 - **Detach and switch** between projects without terminating shells
 - **Reattach seamlessly** to running sessions with full history and state preserved
@@ -39,7 +39,7 @@ go build -o vibemux .
 
 ### Requirements
 
-- **tmux** 2.6+ (required — vibemux uses tmux for terminal emulation)
+- **tmux** 2.6+ (required: vibemux uses tmux for terminal emulation)
 - Go 1.21+
 - A POSIX-compliant shell (`$SHELL` environment variable, defaults to `/bin/sh`)
 
@@ -109,8 +109,11 @@ Each project row displays an icon representing the state of the agent (e.g. Clau
 | ‼️ | blocked | Agent is waiting for input or hit an error |
 | 🫠 | stale | Agent status is outdated (no recent update) |
 | ⚪ | active | Session is open but no agent detected |
+| ⊘ | no_git | Project directory is not a git repository (configurable via `icons.no_git`) |
 
 ### Git glyphs
+
+These glyphs appear within the git status column for projects that are git repositories. They are fixed (not configurable).
 
 | Glyph | Meaning |
 |-------|---------|
@@ -124,7 +127,6 @@ Each project row displays an icon representing the state of the agent (e.g. Clau
 | `↓` | Behind upstream |
 | `<>` | Diverged from upstream |
 | `=` | In sync with upstream |
-| `⊘` | Not a git repository |
 
 ### Hook subcommands
 
@@ -174,7 +176,7 @@ Global settings live in `~/.config/vibemux/config.json` (XDG Base Directory comp
 | `internal/app` | Root TUI model, state machine, message routing |
 | `internal/config` | XDG-compliant config store for projects (JSON) |
 | `internal/model` | Project data structure |
-| `internal/tmux` | tmux session management (create, attach, kill, list sessions) — uses exact session-name matching so `vmx-foo` doesn't collide with `vmx-foo-bar` |
+| `internal/tmux` | tmux session management (create, attach, kill, list sessions); uses exact session-name matching so `vmx-foo` doesn't collide with `vmx-foo-bar` |
 | `internal/gitops` | Git URL normalization (HTTPS → SSH for GitHub) and `git clone` invocation |
 | `internal/ui/projectlist` | Project list view with type-to-filter, digit quick-select, and active-only toggle |
 | `internal/ui/addproject` | Add-project flow: pick existing / create empty / clone GitHub repo |
@@ -215,7 +217,7 @@ Sessions are managed by the tmux server, not vibemux. This means:
 
 | Package | Why |
 |---------|-----|
-| `charm.land/bubbletea/v2` | TUI event loop — state machine, input handling, render cycle |
+| `charm.land/bubbletea/v2` | TUI event loop: state machine, input handling, render cycle |
 | `charm.land/bubbles/v2` | TUI components: `list` (project picker), `filepicker` (add project), `textinput` (folder name / repo URL), `spinner` (clone progress) |
 | `charm.land/lipgloss/v2` | Styling for UI elements (ANSI colors, layouts) |
 | `github.com/charmbracelet/x/ansi` | ANSI-safe string truncation in the highlight-while-filtering delegate |
