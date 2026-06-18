@@ -287,6 +287,7 @@ func (m Model) ActiveSessions() map[string]bool {
 // Per-project focused index is reset to 0 (most urgent) on each call.
 func (m *Model) SetAgents(byProj map[string][]agent.Status) {
 	m.agentsByProj = make(map[string][]agent.Status, len(byProj))
+	m.focusedAgent = make(map[string]int, len(byProj))
 	threshold := time.Duration(m.settings.StaleThresholdSec) * time.Second
 	now := time.Now()
 	for id, ss := range byProj {
@@ -381,7 +382,7 @@ type highlightWhileFilteringDelegate struct {
 	list.DefaultDelegate
 }
 
-const ellipsis = "..."
+const ellipsis = "…"
 
 func (d highlightWhileFilteringDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	pi, ok := item.(projectItem)

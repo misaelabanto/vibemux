@@ -210,6 +210,45 @@ func TestSetSettings_StoredAndReflected(t *testing.T) {
 	}
 }
 
+// TestUpdateLeftRight_IgnoredWhileFiltering checks that left/right keys do NOT
+// change the focused agent index while the list is in filtering mode.
+func TestUpdateLeftRight_IgnoredWhileFiltering(t *testing.T) {
+	m := New(makeProjects(), 80, 24)
+
+	now := time.Now()
+	agents := map[string][]agent.Status{
+		"proj1": {
+			{SessionID: "s1", State: agent.Blocked, UpdatedAt: now},
+			{SessionID: "s2", State: agent.Working, UpdatedAt: now},
+		},
+	}
+	m.SetAgents(agents)
+
+	// Confirm starting focus is index 0 (Blocked, highest urgency).
+	f0, _ := m.FocusedAgentForSelected()
+	if f0.State != agent.Blocked {
+		t.Fatalf("pre-condition failed: expected Blocked at index 0, got %v", f0.State)
+	}
+
+	// Enter filter mode by sending a printable character that isTypingChar accepts.
+	// Update dispatches a slash followed by the char, which puts the list into Filtering.
+	typingMsg := tea.KeyPressMsg{Code: 'a', Text: "a"}
+	m2, _ := m.Update(typingMsg)
+
+	if !m2.IsFiltering() {
+		t.Fatal("pre-condition failed: model is not in Filtering state after typing 'a'")
+	}
+
+	// Now send left and right - focus must NOT change.
+	m3, _ := m2.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m4, _ := m3.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+
+	f, _ := m4.FocusedAgentForSelected()
+	if f.State != agent.Blocked {
+		t.Errorf("focus changed while filtering: got %v, want Blocked (index 0)", f.State)
+	}
+}
+
 // TestSetAgents_ResetsFocusOnUpdate checks that when agents are updated for a
 // project the focused index resets to 0 (most urgent).
 func TestSetAgents_ResetsFocusOnUpdate(t *testing.T) {
