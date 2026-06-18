@@ -11,6 +11,7 @@ import (
 	"github.com/misaelabanto/vibemux/internal/agent"
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/gitstatus"
+	"github.com/misaelabanto/vibemux/internal/hookinstall"
 	"github.com/misaelabanto/vibemux/internal/model"
 	"github.com/misaelabanto/vibemux/internal/tmux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
@@ -59,9 +60,34 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateProjectList(msg)
 	case ViewAddProject:
 		return m.updateAddProject(msg)
+	case ViewConsent:
+		return m.updateConsent(msg)
 	}
 
 	return m, nil
+}
+
+// updateConsent handles key events in the consent prompt state.
+func (m AppModel) updateConsent(msg tea.Msg) (tea.Model, tea.Cmd) {
+	key, ok := msg.(tea.KeyPressMsg)
+	if !ok {
+		return m, nil
+	}
+	switch key.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "y", "Y":
+		_ = hookinstall.Install("vibemux")
+		m.state = ViewProjectList
+		return m, computeStatus(m.projects)
+	case "n", "N":
+		_ = setHooksDeclined()
+		m.state = ViewProjectList
+		return m, nil
+	default:
+		m.state = ViewProjectList
+		return m, nil
+	}
 }
 
 func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
