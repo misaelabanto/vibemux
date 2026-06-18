@@ -44,7 +44,10 @@ func TestRunHook_PreToolUse(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 1 || statuses[0].State != Working {
 		t.Errorf("expected 1 Working status, got %+v", statuses)
 	}
@@ -58,7 +61,10 @@ func TestRunHook_PostToolUse(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 1 || statuses[0].State != Working {
 		t.Errorf("expected 1 Working status, got %+v", statuses)
 	}
@@ -72,7 +78,10 @@ func TestRunHook_Stop(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
 	}
@@ -89,7 +98,10 @@ func TestRunHook_Notification(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status, got %d", len(statuses))
 	}
@@ -107,7 +119,10 @@ func TestRunHook_SessionEnd(t *testing.T) {
 		t.Fatalf("unexpected error on write: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 1 {
 		t.Fatalf("expected 1 status before delete, got %d", len(statuses))
 	}
@@ -118,7 +133,10 @@ func TestRunHook_SessionEnd(t *testing.T) {
 		t.Fatalf("unexpected error on delete: %v", err)
 	}
 
-	statuses, _ = LoadAll()
+	statuses, err = LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 0 {
 		t.Errorf("expected 0 statuses after SessionEnd, got %d", len(statuses))
 	}
@@ -132,7 +150,10 @@ func TestRunHook_UnknownEvent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 0 {
 		t.Errorf("expected 0 statuses for unknown event, got %d", len(statuses))
 	}
@@ -146,7 +167,10 @@ func TestRunHook_MissingSessionID(t *testing.T) {
 		t.Fatalf("expected nil for missing session_id, got %v", err)
 	}
 
-	statuses, _ := LoadAll()
+	statuses, err := LoadAll()
+	if err != nil {
+		t.Fatalf("LoadAll error: %v", err)
+	}
 	if len(statuses) != 0 {
 		t.Errorf("expected 0 statuses, got %d", len(statuses))
 	}

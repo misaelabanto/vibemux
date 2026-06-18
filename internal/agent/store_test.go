@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestWriteThenLoadAll(t *testing.T) {
 		SessionID: "abc123",
 		State:     agent.Working,
 		Message:   "running tests",
-		UpdatedAt: time.Now().Truncate(time.Second),
+		UpdatedAt: time.Now(),
 	}
 
 	if err := agent.Write(s); err != nil {
@@ -137,7 +138,7 @@ func TestLoadAllSkipsMalformedFile(t *testing.T) {
 
 	// Inject a malformed file directly into the agents dir.
 	dir := agent.AgentsDir()
-	badPath := dir + "/bad-session.json"
+	badPath := filepath.Join(dir, "bad-session.json")
 	if err := os.WriteFile(badPath, []byte("not json {{{{"), 0o644); err != nil {
 		t.Fatalf("write bad file: %v", err)
 	}
