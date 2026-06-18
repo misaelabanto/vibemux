@@ -1,6 +1,7 @@
 package zellij
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,15 +89,68 @@ func (Backend) HasSession(name string) bool {
 // has no --cwd flag for session creation) and via the options subcommand so
 // panes opened later in the session also start there.
 //
-// session-serialization is turned off for the session: zellij otherwise
-// serializes sessions to disk and resurrects them as EXITED after they end,
-// so a session the user exited would come back. vibemux wants tmux-like
-// semantics where exiting or killing a session ends it for good.
+// Two steps give exited sessions tmux-like "gone means gone" semantics:
+//
+//   - session_serialization is turned off via a generated --config file.
+//     zellij otherwise serializes sessions to disk and resurrects them as
+//     EXITED corpses after they end. The setting MUST travel in a config file:
+//     passing --session-serialization to the `options` subcommand at creation
+//     is silently ignored (verified on 0.44.3), the same quirk that affects
+//     web_sharing.
+//   - any existing serialized corpse for this name is deleted first, so a
+//     fresh session is created instead of resurrecting the old one with its
+//     old tabs. NewSession is only called when no live session of this name
+//     exists, so this never tears down a running session.
 func (Backend) NewSession(name, dir string) error {
-	cmd := command("attach", "--create-background", name, "options",
-		"--default-cwd", dir, "--session-serialization", "false")
+	cfg, err := noSerializeConfig(name)
+	if err != nil {
+		return err
+	}
+	_ = command("delete-session", "--force", name).Run()
+	cmd := command("--config", cfg, "attach", "--create-background", name, "options", "--default-cwd", dir)
 	cmd.Dir = dir
 	return cmd.Run()
+}
+
+// effectiveConfigPath returns the config file zellij would normally load, as
+// reported by `zellij setup --check` (which knows the full resolution order,
+// including the quirk that an existing ~/.config/zellij wins over
+// XDG_CONFIG_HOME). Returns "" when it cannot be determined; the reported file
+// may not exist.
+func effectiveConfigPath() string {
+	out, err := command("setup", "--check").Output()
+	if err != nil {
+		return ""
+	}
+	const marker = "[LOOKING FOR CONFIG FILE FROM]:"
+	for _, line := range strings.Split(string(out), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), marker); ok {
+			return strings.Trim(strings.TrimSpace(rest), "\"")
+		}
+	}
+	return ""
+}
+
+// noSerializeConfig writes a config file that turns session_serialization off
+// while preserving the user's own config, and returns its path. Passing
+// --config replaces zellij's normal config resolution, so the user's settings
+// are copied in; the override is prepended because zellij keeps the first
+// occurrence of a duplicated option, so it wins over any session_serialization
+// in the user config. The file lives in the temp dir for the session's
+// lifetime: the zellij server re-reads it after creation, so it must outlive
+// the creating client.
+func noSerializeConfig(name string) (string, error) {
+	content := "session_serialization false\n"
+	if p := effectiveConfigPath(); p != "" {
+		if user, err := os.ReadFile(p); err == nil {
+			content += string(user)
+		}
+	}
+	path := filepath.Join(os.TempDir(), "vmx-noserialize-"+name+".kdl")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", fmt.Errorf("writing session config: %w", err)
+	}
+	return path, nil
 }
 
 // AttachCommand returns an *exec.Cmd that attaches to the named zellij
