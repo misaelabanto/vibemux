@@ -1,12 +1,16 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/misaelabanto/vibemux/internal/agent"
 	"github.com/misaelabanto/vibemux/internal/config"
+	"github.com/misaelabanto/vibemux/internal/gitstatus"
 	"github.com/misaelabanto/vibemux/internal/model"
 	"github.com/misaelabanto/vibemux/internal/tmux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
@@ -14,26 +18,34 @@ import (
 )
 
 func (m AppModel) Init() tea.Cmd {
-	return refreshSessionStatus()
+	return tea.Batch(computeStatus(m.projects), tick(m.settings))
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TmuxReturnedMsg:
-		// User detached or session ended — return to project list.
+		// User detached or the session ended. Return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
 		prevActiveOnly := m.projectList.ShowActiveOnly()
 		m.projectList = projectlist.New(projects, m.width, m.height)
+		m.projectList.SetSettings(m.settings)
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
-		return m, refreshSessionStatus()
+		return m, computeStatus(m.projects)
 
-	case SessionStatusMsg:
-		active := mapSessionsToProjects(msg.ActiveSessions, m.projects)
-		m.projectList.SetActiveSessions(active)
+	case StatusComputedMsg:
+		m.projectList.SetActiveSessions(msg.Active)
+		m.projectList.SetAgents(msg.Agents)
+		m.projectList.SetGitStatus(msg.Git)
 		return m, nil
+
+	case TickMsg:
+		return m, tea.Batch(computeStatus(m.projects), tick(m.settings))
+
+	case FetchDoneMsg:
+		return m, computeStatus(m.projects)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -84,12 +96,12 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 					projects, _ := config.LoadProjects()
 					m.projects = projects
 					cmd := m.projectList.SetProjects(projects)
-					return m, tea.Batch(cmd, refreshSessionStatus())
+					return m, tea.Batch(cmd, computeStatus(m.projects))
 				}
 			case "ctrl+x":
 				if p, ok := m.projectList.SelectedProject(); ok {
 					tmux.KillSession(tmux.SessionName(p.Path))
-					return m, refreshSessionStatus()
+					return m, computeStatus(m.projects)
 				}
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
@@ -155,18 +167,67 @@ func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	cmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
+	execCmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
 		return TmuxReturnedMsg{Err: err}
 	})
-	return m, cmd
+
+	if m.settings.FetchOnEnter {
+		fetchCmd := func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), gitstatus.FetchTimeout())
+			defer cancel()
+			_ = gitstatus.Fetch(ctx, p.Path)
+			return FetchDoneMsg{ProjectID: p.ID}
+		}
+		return m, tea.Batch(execCmd, fetchCmd)
+	}
+
+	return m, execCmd
 }
 
-// refreshSessionStatus returns a Cmd that queries tmux for active vibemux
-// sessions and sends a SessionStatusMsg.
-func refreshSessionStatus() tea.Cmd {
+// tick returns a tea.Cmd that fires TickMsg after LocalRefreshMS milliseconds.
+// Defaults to 3000 ms if LocalRefreshMS is not positive.
+func tick(s config.Settings) tea.Cmd {
+	ms := s.LocalRefreshMS
+	if ms <= 0 {
+		ms = 3000
+	}
+	return tea.Tick(time.Duration(ms)*time.Millisecond, func(time.Time) tea.Msg {
+		return TickMsg{}
+	})
+}
+
+// computeStatus is a tea.Cmd that, off the UI goroutine, computes the full
+// local status: active tmux sessions, agent statuses grouped per project (only
+// for active projects), and git status per project.
+func computeStatus(projects []model.Project) tea.Cmd {
 	return func() tea.Msg {
+		// Collect active tmux sessions.
 		sessions, _ := tmux.ListVibemuxSessions()
-		return SessionStatusMsg{ActiveSessions: sessions}
+		active := mapSessionsToProjects(sessions, projects)
+
+		// Load all agent statuses and group them by project.
+		statuses, _ := agent.LoadAll()
+		allAgents := agent.GroupByProject(statuses, projects)
+
+		// Gate agents on active: an agent cannot be live if its session is gone.
+		agentsByActive := make(map[string][]agent.Status, len(allAgents))
+		for id, ss := range allAgents {
+			if active[id] {
+				agentsByActive[id] = ss
+			}
+		}
+
+		// Compute git status for each project.
+		gitByProj := make(map[string]gitstatus.Status, len(projects))
+		for _, p := range projects {
+			gitByProj[p.ID] = gitstatus.Compute(p.Path)
+		}
+
+		return StatusComputedMsg{
+			Active: active,
+			Agents: agentsByActive,
+			Git:    gitByProj,
+		}
 	}
 }
 
