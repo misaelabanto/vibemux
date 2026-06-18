@@ -44,10 +44,14 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, computeStatus(m.projects, m.mux)
 
 	case StatusComputedMsg:
-		m.projectList.SetActiveSessions(msg.Active)
-		m.projectList.SetAgents(msg.Agents)
-		m.projectList.SetGitStatus(msg.Git)
-		return m, nil
+		// Each setter rebuilds the list items; when a filter is active, SetItems
+		// returns a cmd that recomputes the filtered view. These cmds must be
+		// run or the list gets stuck on "no results matched" after a refresh.
+		return m, tea.Batch(
+			m.projectList.SetActiveSessions(msg.Active),
+			m.projectList.SetAgents(msg.Agents),
+			m.projectList.SetGitStatus(msg.Git),
+		)
 
 	case TickMsg:
 		return m, tea.Batch(computeStatus(m.projects, m.mux), tick(m.settings))
