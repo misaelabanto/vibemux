@@ -24,7 +24,7 @@ func TestDefaultSettings_IconValues(t *testing.T) {
 	cases := map[string]string{
 		"working": "🦾",
 		"done":    "✅",
-		"blocked": "‼️",
+		"blocked": "❗",
 		"stale":   "🫠",
 		"active":  "⚪",
 		"no_git":  "⊘",

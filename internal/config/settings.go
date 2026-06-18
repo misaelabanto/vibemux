@@ -24,7 +24,7 @@ func DefaultSettings() Settings {
 		Icons: map[string]string{
 			"working": "🦾",
 			"done":    "✅",
-			"blocked": "‼️",
+			"blocked": "❗",
 			"stale":   "🫠",
 			"active":  "⚪",
 			"no_git":  "⊘",
