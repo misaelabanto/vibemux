@@ -104,3 +104,23 @@ func TestLastSentence_MissingFile(t *testing.T) {
 		t.Errorf("expected empty string for missing file, got %q", got)
 	}
 }
+
+func TestLastSentence_FallbackWhenSegmentLooksLikeCode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+
+	// Last assistant message has a long token with no spaces, which looksLikeCode will detect.
+	// The fallback should return the aiTitle instead of this code-like segment.
+	lines := `{"type":"ai-title","aiTitle":"Fallback Title Here","sessionId":"s1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"a_very_long_identifier_that_has_no_spaces_at_all_here_xx"}]}}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := LastSentence(path)
+	want := "Fallback Title Here"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
