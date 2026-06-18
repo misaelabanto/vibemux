@@ -16,8 +16,8 @@ func TestHasSessionExactMatch(t *testing.T) {
 	}
 
 	const (
-		longName   = "vmx-pfxtest-XYZ-long"
-		shortName  = "vmx-pfxtest-XYZ"
+		longName  = "vmx-pfxtest-XYZ-long"
+		shortName = "vmx-pfxtest-XYZ"
 	)
 
 	// Ensure clean state.
@@ -36,7 +36,7 @@ func TestHasSessionExactMatch(t *testing.T) {
 	}
 
 	if HasSession(shortName) {
-		t.Errorf("HasSession(%q) = true, want false — only %q exists; tmux prefix match leaked through",
+		t.Errorf("HasSession(%q) = true, want false - only %q exists; tmux prefix match leaked through",
 			shortName, longName)
 	}
 }

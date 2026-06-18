@@ -67,7 +67,7 @@ func KillSession(name string) error {
 func ListVibemuxSessions() (map[string]bool, error) {
 	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
 	if err != nil {
-		// tmux returns error when no server is running — treat as empty.
+		// tmux returns error when no server is running; treat as empty.
 		return map[string]bool{}, nil
 	}
 
