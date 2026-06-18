@@ -8,19 +8,26 @@ import (
 
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/model"
-	"github.com/misaelabanto/vibemux/internal/tmux"
+	"github.com/misaelabanto/vibemux/internal/mux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
 )
 
 func (m AppModel) Init() tea.Cmd {
-	return refreshSessionStatus()
+	// Dispatch on the authoritative view state, like Update and View, rather
+	// than re-deriving it from whether the mux is nil.
+	switch m.state {
+	case ViewOnboarding:
+		return m.onboarding.Init()
+	default:
+		return refreshSessionStatus(m.mux)
+	}
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case TmuxReturnedMsg:
-		// User detached or session ended — return to project list.
+	case MultiplexerReturnedMsg:
+		// User detached or session ended: return to project list.
 		projects, _ := config.LoadProjects()
 		m.projects = projects
 		prevActiveOnly := m.projectList.ShowActiveOnly()
@@ -28,10 +35,10 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
-		return m, refreshSessionStatus()
+		return m, refreshSessionStatus(m.mux)
 
 	case SessionStatusMsg:
-		active := mapSessionsToProjects(msg.ActiveSessions, m.projects)
+		active := mapSessionsToProjects(msg.ActiveSessions, m.projects, m.mux)
 		m.projectList.SetActiveSessions(active)
 		return m, nil
 
@@ -43,6 +50,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.state {
+	case ViewOnboarding:
+		return m.updateOnboarding(msg)
 	case ViewProjectList:
 		return m.updateProjectList(msg)
 	case ViewAddProject:
@@ -50,6 +59,38 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// updateOnboarding routes input to the onboarding sub-model and, once the
+// user has chosen a multiplexer, persists it, builds the backend, and enters
+// the project list. Quitting onboarding exits vibemux (it cannot run without
+// a multiplexer).
+func (m AppModel) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.onboarding, cmd = m.onboarding.Update(msg)
+
+	if m.onboarding.Quit() {
+		return m, tea.Quit
+	}
+
+	if k, ok := m.onboarding.Chosen(); ok {
+		_ = config.SaveSettings(config.Settings{Multiplexer: string(k)})
+		active, err := mux.New(k)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error initializing %s: %v\n", k, err)
+			return m, tea.Quit
+		}
+		m.mux = active
+		m.state = ViewProjectList
+		m.projectList.SetSize(m.width, m.height)
+		return m, tea.Batch(cmd, refreshSessionStatus(m.mux))
+	}
+
+	return m, cmd
 }
 
 func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -79,17 +120,17 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
+					m.mux.KillSession(m.mux.SessionName(p.Path))
 					config.RemoveProject(p.ID)
 					projects, _ := config.LoadProjects()
 					m.projects = projects
 					cmd := m.projectList.SetProjects(projects)
-					return m, tea.Batch(cmd, refreshSessionStatus())
+					return m, tea.Batch(cmd, refreshSessionStatus(m.mux))
 				}
 			case "ctrl+x":
 				if p, ok := m.projectList.SelectedProject(); ok {
-					tmux.KillSession(tmux.SessionName(p.Path))
-					return m, refreshSessionStatus()
+					m.mux.KillSession(m.mux.SessionName(p.Path))
+					return m, refreshSessionStatus(m.mux)
 				}
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
@@ -140,41 +181,42 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	config.TouchProject(p.ID)
 
-	if !tmux.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "tmux is not installed\n")
+	if !m.mux.IsInstalled() {
+		fmt.Fprintf(os.Stderr, "%s is not installed\n", m.mux.Name())
 		return m, nil
 	}
 
-	name := tmux.SessionName(p.Path)
+	name := m.mux.SessionName(p.Path)
 
-	// Create a new tmux session if one doesn't already exist.
-	if !tmux.HasSession(name) {
-		if err := tmux.NewSession(name, p.Path); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+	// Create a new session if one doesn't already exist.
+	if !m.mux.HasSession(name) {
+		if err := m.mux.NewSession(name, p.Path); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating %s session: %v\n", m.mux.Name(), err)
 			return m, nil
 		}
 	}
 
-	cmd := tea.ExecProcess(tmux.AttachCommand(name), func(err error) tea.Msg {
-		return TmuxReturnedMsg{Err: err}
+	cmd := tea.ExecProcess(m.mux.AttachCommand(name), func(err error) tea.Msg {
+		return MultiplexerReturnedMsg{Err: err}
 	})
 	return m, cmd
 }
 
-// refreshSessionStatus returns a Cmd that queries tmux for active vibemux
-// sessions and sends a SessionStatusMsg.
-func refreshSessionStatus() tea.Cmd {
+// refreshSessionStatus returns a Cmd that queries the active multiplexer for
+// active vibemux sessions and sends a SessionStatusMsg.
+func refreshSessionStatus(mx mux.Multiplexer) tea.Cmd {
 	return func() tea.Msg {
-		sessions, _ := tmux.ListVibemuxSessions()
+		sessions, _ := mx.ListVibemuxSessions()
 		return SessionStatusMsg{ActiveSessions: sessions}
 	}
 }
 
-// mapSessionsToProjects maps tmux session names back to project IDs.
-func mapSessionsToProjects(sessions map[string]bool, projects []model.Project) map[string]bool {
+// mapSessionsToProjects maps live multiplexer session names back to project
+// IDs.
+func mapSessionsToProjects(sessions map[string]bool, projects []model.Project, mx mux.Multiplexer) map[string]bool {
 	active := map[string]bool{}
 	for _, p := range projects {
-		name := tmux.SessionName(p.Path)
+		name := mx.SessionName(p.Path)
 		if sessions[name] {
 			active[p.ID] = true
 		}

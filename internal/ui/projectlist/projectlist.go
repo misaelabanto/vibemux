@@ -8,17 +8,18 @@ import (
 	"strings"
 	"unicode"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/misaelabanto/vibemux/internal/model"
+	"github.com/misaelabanto/vibemux/internal/ui/styles"
 )
 
-var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+var helpStyle = styles.Muted
 
-var bannerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
+var bannerStyle = styles.Accent
 
 const banner = "" +
 	" __  __      __                                         \n" +
@@ -50,7 +51,7 @@ func (p projectItem) FilterValue() string { return p.Project.Name }
 type Model struct {
 	list           list.Model
 	projects       []model.Project // unfiltered slice, source of truth for buildItems
-	activeSessions map[string]bool // project ID → has active tmux session
+	activeSessions map[string]bool // project ID -> has active multiplexer session
 	showActiveOnly bool
 	width          int
 	height         int
@@ -181,8 +182,8 @@ func (m *Model) SetProjects(projects []model.Project) tea.Cmd {
 	return m.list.SetItems(m.buildItems())
 }
 
-// SetActiveSessions updates which projects have running tmux sessions and
-// rebuilds items so the active-only filter (if on) reflects the new set.
+// SetActiveSessions updates which projects have running multiplexer sessions
+// and rebuilds items so the active-only filter (if on) reflects the new set.
 func (m *Model) SetActiveSessions(active map[string]bool) {
 	m.activeSessions = active
 	m.list.SetItems(m.buildItems())
@@ -202,7 +203,7 @@ func (m *Model) ToggleActiveOnly() tea.Cmd {
 }
 
 // SetShowActiveOnly preserves the toggle across model rebuilds (e.g. after
-// returning from a tmux session).
+// returning from a multiplexer session).
 func (m *Model) SetShowActiveOnly(v bool) {
 	if m.showActiveOnly == v {
 		return

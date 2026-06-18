@@ -9,9 +9,15 @@ import (
 
 const sessionPrefix = "vmx-"
 
+// Backend drives tmux. It has no state; methods shell out to the tmux binary.
+type Backend struct{}
+
+// Name is the multiplexer's persisted, human-readable identity.
+func (Backend) Name() string { return "tmux" }
+
 // SessionName returns a deterministic tmux session name derived from the
-// base directory name of the project path (e.g. "vibemux-myproject").
-func SessionName(projectPath string) string {
+// base directory name of the project path (e.g. "vmx-myproject").
+func (Backend) SessionName(projectPath string) string {
 	base := filepath.Base(filepath.Clean(projectPath))
 	if base == "" || base == "." || base == "/" {
 		return sessionPrefix + "unknown"
@@ -20,7 +26,7 @@ func SessionName(projectPath string) string {
 }
 
 // IsInstalled checks whether tmux is available on PATH.
-func IsInstalled() bool {
+func (Backend) IsInstalled() bool {
 	_, err := exec.LookPath("tmux")
 	return err == nil
 }
@@ -34,14 +40,14 @@ func exactTarget(name string) string {
 }
 
 // HasSession checks whether a tmux session with the given name exists.
-func HasSession(name string) bool {
+func (Backend) HasSession(name string) bool {
 	err := exec.Command("tmux", "has-session", "-t", exactTarget(name)).Run()
 	return err == nil
 }
 
 // NewSession creates a new detached tmux session with the given name and
 // working directory.
-func NewSession(name, dir string) error {
+func (Backend) NewSession(name, dir string) error {
 	return exec.Command("tmux", "new-session", "-d", "-s", name, "-c", dir).Run()
 }
 
@@ -49,7 +55,7 @@ func NewSession(name, dir string) error {
 // Stdin/Stdout/Stderr are pre-set to the real TTY file descriptors so that
 // bubbletea's ExecProcess won't override them with its wrapped readers/writers,
 // which tmux cannot use (it needs a real /dev/tty).
-func AttachCommand(name string) *exec.Cmd {
+func (Backend) AttachCommand(name string) *exec.Cmd {
 	cmd := exec.Command("tmux", "attach-session", "-t", exactTarget(name))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -58,16 +64,16 @@ func AttachCommand(name string) *exec.Cmd {
 }
 
 // KillSession destroys the named tmux session.
-func KillSession(name string) error {
+func (Backend) KillSession(name string) error {
 	return exec.Command("tmux", "kill-session", "-t", exactTarget(name)).Run()
 }
 
 // ListVibemuxSessions returns a set of active tmux session names that have the
 // vibemux prefix.
-func ListVibemuxSessions() (map[string]bool, error) {
+func (Backend) ListVibemuxSessions() (map[string]bool, error) {
 	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
 	if err != nil {
-		// tmux returns error when no server is running — treat as empty.
+		// tmux returns error when no server is running: treat as empty.
 		return map[string]bool{}, nil
 	}
 
