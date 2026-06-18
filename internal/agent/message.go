@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // transcriptRecord is the minimal shape of a Claude Code JSONL line.
@@ -105,19 +106,29 @@ func looksLikeCode(s string) bool {
 	return false
 }
 
-// LastSentence reads the Claude Code JSONL transcript at transcriptPath and
-// returns the last sentence of the agent's last assistant message. It falls
-// back to the last seen aiTitle when the extracted sentence looks like code or
-// is empty. Returns "" when the file cannot be read.
-func LastSentence(transcriptPath string) string {
+// transcriptScan holds the data extracted from a single pass over a transcript.
+type transcriptScan struct {
+	// lastText is the most recent non-empty assistant text block.
+	lastText string
+	// lastAiTitle is the most recent aiTitle record.
+	lastAiTitle string
+	// endsWithText reports whether the turn looks complete: the last assistant
+	// text block is not followed by a later tool_use block. Claude Code can fire
+	// the Stop hook before the final assistant text is flushed to disk, in which
+	// case the last assistant activity is still a tool_use and this is false.
+	endsWithText bool
+}
+
+// scanTranscript does one pass over the Claude Code JSONL transcript.
+func scanTranscript(transcriptPath string) transcriptScan {
 	f, err := os.Open(transcriptPath)
 	if err != nil {
-		return ""
+		return transcriptScan{}
 	}
 	defer f.Close()
 
-	var lastAssistantText string
-	var lastAiTitle string
+	var res transcriptScan
+	toolUseAfterText := false
 
 	scanner := bufio.NewScanner(f)
 	// Increase buffer for potentially long lines.
@@ -129,24 +140,63 @@ func LastSentence(transcriptPath string) string {
 			continue
 		}
 		if rec.AiTitle != "" {
-			lastAiTitle = rec.AiTitle
+			res.lastAiTitle = rec.AiTitle
 		}
 		if rec.Type == "assistant" && rec.Message != nil {
 			for _, block := range rec.Message.Content {
-				if block.Type == "text" && block.Text != "" {
-					lastAssistantText = block.Text
-					break
+				switch {
+				case block.Type == "text" && block.Text != "":
+					res.lastText = block.Text
+					toolUseAfterText = false
+				case block.Type == "tool_use":
+					toolUseAfterText = true
 				}
 			}
 		}
 	}
 
-	if lastAssistantText != "" {
-		sentence := lastSentenceFromText(lastAssistantText)
+	res.endsWithText = res.lastText != "" && !toolUseAfterText
+	return res
+}
+
+// sentenceFrom derives the display sentence from a scan, falling back to the
+// aiTitle when the extracted sentence is empty or looks like code.
+func sentenceFrom(s transcriptScan) string {
+	if s.lastText != "" {
+		sentence := lastSentenceFromText(s.lastText)
 		if sentence != "" && !looksLikeCode(sentence) {
 			return sentence
 		}
 	}
+	return s.lastAiTitle
+}
 
-	return lastAiTitle
+// LastSentence reads the Claude Code JSONL transcript at transcriptPath and
+// returns the last sentence of the agent's last assistant message. It falls
+// back to the last seen aiTitle when the extracted sentence looks like code or
+// is empty. Returns "" when the file cannot be read.
+func LastSentence(transcriptPath string) string {
+	return sentenceFrom(scanTranscript(transcriptPath))
+}
+
+// transcript settle tuning: Claude Code may invoke the Stop hook a few dozen ms
+// before the final assistant text block is flushed to the transcript file.
+var (
+	transcriptSettleTimeout = 500 * time.Millisecond
+	transcriptSettleStep    = 25 * time.Millisecond
+)
+
+// LastSentenceFinal is like LastSentence but tolerant of the Stop-hook flush
+// race: it polls the transcript until the last assistant block is text (a
+// completed turn) or a short timeout elapses, then extracts the sentence. Use
+// this from the Stop handler so a mid-turn preamble is not captured as the
+// final message.
+func LastSentenceFinal(transcriptPath string) string {
+	deadline := time.Now().Add(transcriptSettleTimeout)
+	scan := scanTranscript(transcriptPath)
+	for !scan.endsWithText && time.Now().Before(deadline) {
+		time.Sleep(transcriptSettleStep)
+		scan = scanTranscript(transcriptPath)
+	}
+	return sentenceFrom(scan)
 }

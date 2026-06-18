@@ -54,7 +54,10 @@ func RunHook(r io.Reader) error {
 			Cwd:       p.Cwd,
 			SessionID: p.SessionID,
 			State:     Done,
-			Message:   LastSentence(p.TranscriptPath),
+			// LastSentenceFinal waits out the brief window where the final
+			// assistant text block has not yet been flushed to the transcript,
+			// so we capture the turn's last message rather than a mid-turn one.
+			Message:   LastSentenceFinal(p.TranscriptPath),
 			UpdatedAt: now,
 		})
 

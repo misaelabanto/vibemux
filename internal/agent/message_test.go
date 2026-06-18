@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // lastSentenceFromText tests
@@ -102,6 +103,83 @@ func TestLastSentence_MissingFile(t *testing.T) {
 	got := LastSentence("/nonexistent/path/transcript.jsonl")
 	if got != "" {
 		t.Errorf("expected empty string for missing file, got %q", got)
+	}
+}
+
+// scanTranscript / LastSentenceFinal tests
+
+// A turn that ends with a text block (after earlier tool_use) is complete.
+func TestScanTranscript_EndsWithText_TextAfterToolUse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	lines := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Now update the call site."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Build passes. Want me to launch it?"}]}}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := scanTranscript(path)
+	if !s.endsWithText {
+		t.Errorf("endsWithText = false, want true")
+	}
+	if got := sentenceFrom(s); got != "Want me to launch it?" {
+		t.Errorf("sentenceFrom = %q, want %q", got, "Want me to launch it?")
+	}
+}
+
+// A transcript where the last assistant activity is a tool_use (the final text
+// block not yet flushed) is incomplete: endsWithText must be false so the Stop
+// handler waits instead of capturing the mid-turn preamble.
+func TestScanTranscript_EndsWithText_ToolUseAfterText(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	lines := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Now update the call site."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result"}]}}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if s := scanTranscript(path); s.endsWithText {
+		t.Errorf("endsWithText = true, want false (turn still mid tool_use)")
+	}
+}
+
+// On an incomplete transcript LastSentenceFinal should give up after the
+// timeout and return the best-available sentence rather than blocking forever.
+func TestLastSentenceFinal_TimesOutAndFallsBack(t *testing.T) {
+	prevTimeout, prevStep := transcriptSettleTimeout, transcriptSettleStep
+	transcriptSettleTimeout, transcriptSettleStep = 60*time.Millisecond, 15*time.Millisecond
+	defer func() { transcriptSettleTimeout, transcriptSettleStep = prevTimeout, prevStep }()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	lines := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Working on it."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use"}]}}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LastSentenceFinal(path); got != "Working on it." {
+		t.Errorf("LastSentenceFinal = %q, want %q", got, "Working on it.")
+	}
+}
+
+// When the turn is already complete, LastSentenceFinal returns immediately.
+func TestLastSentenceFinal_CompleteReturnsFinal(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	lines := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Preamble before tools."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All done. Ship it?"}]}}
+`
+	if err := os.WriteFile(path, []byte(lines), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := LastSentenceFinal(path); got != "Ship it?" {
+		t.Errorf("LastSentenceFinal = %q, want %q", got, "Ship it?")
 	}
 }
 
