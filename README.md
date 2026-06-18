@@ -94,6 +94,77 @@ The default tmux prefix is `Ctrl+b`. See `man tmux` for the full command referen
 - **Kill** (`ctrl+x` from project list): Terminates the tmux session. Reopening the project starts a fresh session.
 - **Quit** (`ctrl+c` from project list): Exits vibemux. All tmux sessions persist and can be reattached later.
 
+## Project status indicators
+
+vibemux shows live agent and git status for each project in the project list.
+
+### Agent state icons
+
+Each project row displays an icon representing the state of the agent (e.g. Claude Code) running in its session. The design is agent-agnostic; Claude Code is the first supported agent.
+
+| Icon | State | Meaning |
+|------|-------|---------|
+| 🦾 | working | Agent is actively running a task |
+| ✅ | done | Agent completed its last task |
+| ‼️ | blocked | Agent is waiting for input or hit an error |
+| 🫠 | stale | Agent status is outdated (no recent update) |
+| ⚪ | active | Session is open but no agent detected |
+
+### Git glyphs
+
+| Glyph | Meaning |
+|-------|---------|
+| `✔` | Working tree is clean |
+| `✚` | Modified (unstaged) changes |
+| `●` | Staged changes |
+| `…` | Untracked files |
+| `⚑` | Stashed changes |
+| `✖` | Merge conflicts |
+| `↑` | Ahead of upstream |
+| `↓` | Behind upstream |
+| `<>` | Diverged from upstream |
+| `=` | In sync with upstream |
+| `⊘` | Not a git repository |
+
+### Hook subcommands
+
+vibemux hooks into the Claude Code lifecycle to track agent state. These commands manage the hook entries in `~/.claude/settings.json`:
+
+```bash
+vibemux install-hooks    # Add vibemux hooks (preserves all existing hooks)
+vibemux uninstall-hooks  # Remove vibemux hooks
+vibemux icons            # Print all status icons and git glyphs for terminal preview
+```
+
+On first launch, vibemux will ask if you want to enable agent status tracking. Pressing `y` runs `install-hooks`; pressing `n` writes a declined marker so you are not asked again.
+
+### Configuration
+
+Global settings live in `~/.config/vibemux/config.json` (XDG Base Directory compliant):
+
+```json
+{
+  "icons": {
+    "working": "🦾",
+    "done": "✅",
+    "blocked": "‼️",
+    "stale": "🫠",
+    "active": "⚪",
+    "no_git": "⊘"
+  },
+  "local_refresh_ms": 3000,
+  "stale_threshold_sec": 600,
+  "fetch_on_enter": true
+}
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `icons` | see above | Override any icon with a custom emoji or glyph |
+| `local_refresh_ms` | `3000` | How often (ms) to refresh project status locally |
+| `stale_threshold_sec` | `600` | Seconds before an agent status is considered stale |
+| `fetch_on_enter` | `true` | Run `git fetch` when opening a project |
+
 ## Architecture
 
 ### Components
