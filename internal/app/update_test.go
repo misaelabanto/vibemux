@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -104,6 +103,4 @@ func TestUpdateTickMsgReturnsBatch(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on TickMsg returned nil cmd, want batch cmd")
 	}
-	// Restore env var for agent dir.
-	_ = os.Getenv("XDG_RUNTIME_DIR")
 }

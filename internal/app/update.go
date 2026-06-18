@@ -32,7 +32,6 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList = projectlist.New(projects, m.width, m.height)
 		m.projectList.SetSettings(m.settings)
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
-		m.projectList.SetActiveSessions(m.projectList.ActiveSessions())
 		m.state = ViewProjectList
 		return m, computeStatus(m.projects)
 
