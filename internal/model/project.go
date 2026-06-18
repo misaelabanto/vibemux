@@ -13,4 +13,6 @@ type Project struct {
 // Implement list.DefaultItem interface
 func (p Project) Title() string       { return p.Name }
 func (p Project) Description() string { return p.Path }
-func (p Project) FilterValue() string { return p.Name }
+// FilterValue includes both name and path so list filtering can match a custom
+// name, the leaf directory, or any parent directory in the full path.
+func (p Project) FilterValue() string { return p.Name + " " + p.Path }
