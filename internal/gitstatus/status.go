@@ -54,7 +54,7 @@ func runGit(dir string, args ...string) ([]byte, bool) {
 // and all other fields at their zero values.
 func Compute(path string) Status {
 	// Check if path is inside a git work-tree.
-	_, ok := runGit(path, "-C", path, "rev-parse", "--is-inside-work-tree")
+	_, ok := runGit(path, "rev-parse", "--is-inside-work-tree")
 	if !ok {
 		return Status{IsRepo: false}
 	}
@@ -62,7 +62,7 @@ func Compute(path string) Status {
 	s := Status{IsRepo: true}
 
 	// Parse porcelain v2 status output.
-	out, ok := runGit(path, "-C", path, "status", "--porcelain=v2", "--branch")
+	out, ok := runGit(path, "status", "--porcelain=v2", "--branch")
 	if ok {
 		scanner := bufio.NewScanner(bytes.NewReader(out))
 		for scanner.Scan() {
@@ -114,7 +114,7 @@ func Compute(path string) Status {
 	}
 
 	// Check for stash.
-	_, stashOK := runGit(path, "-C", path, "rev-parse", "--verify", "--quiet", "refs/stash")
+	_, stashOK := runGit(path, "rev-parse", "--verify", "--quiet", "refs/stash")
 	if stashOK {
 		s.Stashed = true
 	}
