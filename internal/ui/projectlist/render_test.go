@@ -97,6 +97,51 @@ func TestGitBadge_CleanNoUpstream(t *testing.T) {
 	}
 }
 
+func TestGitBadge_CleanAhead(t *testing.T) {
+	g := gitstatus.Status{
+		IsRepo:      true,
+		Clean:       true,
+		HasUpstream: true,
+		Ahead:       2,
+		Behind:      0,
+	}
+	got := GitBadge(g, defaultSettings)
+	want := "✔ ↑"
+	if got != want {
+		t.Errorf("GitBadge(clean+ahead) = %q, want %q", got, want)
+	}
+}
+
+func TestGitBadge_CleanBehind(t *testing.T) {
+	g := gitstatus.Status{
+		IsRepo:      true,
+		Clean:       true,
+		HasUpstream: true,
+		Ahead:       0,
+		Behind:      3,
+	}
+	got := GitBadge(g, defaultSettings)
+	want := "✔ ↓"
+	if got != want {
+		t.Errorf("GitBadge(clean+behind) = %q, want %q", got, want)
+	}
+}
+
+func TestGitBadge_CleanDiverged(t *testing.T) {
+	g := gitstatus.Status{
+		IsRepo:      true,
+		Clean:       true,
+		HasUpstream: true,
+		Ahead:       1,
+		Behind:      2,
+	}
+	got := GitBadge(g, defaultSettings)
+	want := "✔ <>"
+	if got != want {
+		t.Errorf("GitBadge(clean+diverged) = %q, want %q", got, want)
+	}
+}
+
 func TestGitBadge_StagedUntrackedAhead(t *testing.T) {
 	g := gitstatus.Status{
 		IsRepo:      true,

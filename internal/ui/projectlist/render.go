@@ -34,6 +34,25 @@ func AgentIcon(state agent.State, s config.Settings) string {
 	}
 }
 
+// upstreamToken returns the upstream divergence glyph for a status, or "" if HasUpstream is false.
+// Returns glyphDiverged if both Ahead>0 and Behind>0, glyphAhead if only ahead,
+// glyphBehind if only behind, or glyphInSync if in sync.
+func upstreamToken(g gitstatus.Status) string {
+	if !g.HasUpstream {
+		return ""
+	}
+	switch {
+	case g.Ahead > 0 && g.Behind > 0:
+		return glyphDiverged
+	case g.Ahead > 0:
+		return glyphAhead
+	case g.Behind > 0:
+		return glyphBehind
+	default:
+		return glyphInSync
+	}
+}
+
 // GitBadge composes a space-joined badge string from the given git status.
 // If the repo is not a git repo, returns s.Icons["no_git"].
 // Git glyphs are literal Unicode constants defined in this file; only no_git comes from Settings.
@@ -42,12 +61,13 @@ func GitBadge(g gitstatus.Status, s config.Settings) string {
 		return s.Icons["no_git"]
 	}
 
-	// Fully clean: show checkmark and upstream state.
+	// Fully clean: show checkmark and upstream state if any.
 	if g.Clean {
-		if g.HasUpstream && g.Ahead == 0 && g.Behind == 0 {
-			return glyphClean + " " + glyphInSync
+		tokens := []string{glyphClean}
+		if u := upstreamToken(g); u != "" {
+			tokens = append(tokens, u)
 		}
-		return glyphClean
+		return strings.Join(tokens, " ")
 	}
 
 	// Dirty: compose tokens in order.
@@ -69,18 +89,8 @@ func GitBadge(g gitstatus.Status, s config.Settings) string {
 		tokens = append(tokens, glyphConflict)
 	}
 
-	if g.HasUpstream {
-		switch {
-		case g.Ahead > 0 && g.Behind > 0:
-			tokens = append(tokens, glyphDiverged)
-		case g.Ahead > 0:
-			tokens = append(tokens, glyphAhead)
-		case g.Behind > 0:
-			tokens = append(tokens, glyphBehind)
-		default:
-			// Ahead==0 and Behind==0 but not clean (dirty files); still show in-sync.
-			tokens = append(tokens, glyphInSync)
-		}
+	if u := upstreamToken(g); u != "" {
+		tokens = append(tokens, u)
 	}
 
 	return strings.Join(tokens, " ")
