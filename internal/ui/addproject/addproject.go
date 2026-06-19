@@ -69,16 +69,21 @@ type Model struct {
 	height int
 }
 
-func New() Model {
-	home, _ := os.UserHomeDir()
-	startDir := home
+// New builds the add-project flow. When startDir names an existing directory the
+// parent picker opens there; otherwise it falls back to the user's home,
+// preferring a Code/Projects folder when one exists.
+func New(startDir string) Model {
+	if info, err := os.Stat(startDir); startDir == "" || err != nil || !info.IsDir() {
+		home, _ := os.UserHomeDir()
+		startDir = home
 
-	preferredDirs := []string{"Code", "code", "Projects", "projects"}
-	for _, dir := range preferredDirs {
-		candidate := filepath.Join(home, dir)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			startDir = candidate
-			break
+		preferredDirs := []string{"Code", "code", "Projects", "projects"}
+		for _, dir := range preferredDirs {
+			candidate := filepath.Join(home, dir)
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				startDir = candidate
+				break
+			}
 		}
 	}
 
