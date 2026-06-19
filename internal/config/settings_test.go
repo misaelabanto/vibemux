@@ -27,7 +27,7 @@ func TestDefaultSettings_IconValues(t *testing.T) {
 		"blocked": "❗",
 		"stale":   "🫠",
 		"active":  "⚪",
-		"no_git":  "⊘",
+		"no_git":  "",
 	}
 	for key, want := range cases {
 		if got := s.Icons[key]; got != want {

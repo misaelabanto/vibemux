@@ -27,7 +27,7 @@ func DefaultSettings() Settings {
 			"blocked": "❗",
 			"stale":   "🫠",
 			"active":  "⚪",
-			"no_git":  "⊘",
+			"no_git":  "",
 		},
 		LocalRefreshMS:    3000,
 		StaleThresholdSec: 600,
