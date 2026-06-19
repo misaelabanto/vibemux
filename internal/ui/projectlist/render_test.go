@@ -217,10 +217,8 @@ func TestGitBadge_ModifiedBehind(t *testing.T) {
 func TestStatusLine_NoAgentActive(t *testing.T) {
 	g := gitstatus.Status{IsRepo: false}
 	got := StatusLine(agent.Status{}, agent.State(""), 0, g, true, defaultSettings)
-	// no git badge (no_git) and active icon
-	wantGit := defaultSettings.Icons["no_git"]
-	wantActive := defaultSettings.Icons["active"]
-	want := wantGit + "  " + wantActive
+	// no git badge for a non-repo, just the active icon
+	want := defaultSettings.Icons["active"]
 	if got != want {
 		t.Errorf("StatusLine(no-agent+active) = %q, want %q", got, want)
 	}
@@ -239,9 +237,8 @@ func TestStatusLine_NoAgentNotActive(t *testing.T) {
 func TestStatusLine_AgentWorking_OtherCount2(t *testing.T) {
 	g := gitstatus.Status{IsRepo: false}
 	got := StatusLine(agent.Status{State: agent.Working}, agent.Working, 2, g, true, defaultSettings)
-	wantGit := defaultSettings.Icons["no_git"]
-	wantAgent := defaultSettings.Icons["working"] + "+2"
-	want := wantGit + "  " + wantAgent
+	// no git badge for a non-repo, just the agent icon and other-count
+	want := defaultSettings.Icons["working"] + "+2"
 	if got != want {
 		t.Errorf("StatusLine(working+otherCount=2) = %q, want %q", got, want)
 	}
@@ -250,9 +247,8 @@ func TestStatusLine_AgentWorking_OtherCount2(t *testing.T) {
 func TestStatusLine_AgentBlocked_OtherCount0(t *testing.T) {
 	g := gitstatus.Status{IsRepo: false}
 	got := StatusLine(agent.Status{State: agent.Blocked}, agent.Blocked, 0, g, true, defaultSettings)
-	wantGit := defaultSettings.Icons["no_git"]
-	wantAgent := defaultSettings.Icons["blocked"]
-	want := wantGit + "  " + wantAgent
+	// no git badge for a non-repo, just the agent icon
+	want := defaultSettings.Icons["blocked"]
 	if got != want {
 		t.Errorf("StatusLine(blocked+otherCount=0) = %q, want %q", got, want)
 	}

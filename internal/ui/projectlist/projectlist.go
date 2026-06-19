@@ -433,25 +433,33 @@ func (d highlightWhileFilteringDelegate) Render(w io.Writer, m list.Model, index
 		matchedRunes = m.MatchesForItem(index)
 	}
 
+	// Active projects render in bold so they stand out from the full list.
+	normalTitle := s.NormalTitle
+	selectedTitle := s.SelectedTitle
+	if pi.active {
+		normalTitle = normalTitle.Bold(true)
+		selectedTitle = selectedTitle.Bold(true)
+	}
+
 	switch {
 	case emptyFilter:
 		title = s.DimmedTitle.Render(title)
 		desc = s.DimmedDesc.Render(desc)
 	case isSelected:
 		if isFiltered {
-			unmatched := s.SelectedTitle.Inline(true)
+			unmatched := selectedTitle.Inline(true)
 			matched := unmatched.Inherit(s.FilterMatch)
 			title = lipgloss.StyleRunes(title, matchedRunes, matched, unmatched)
 		}
-		title = s.SelectedTitle.Render(title)
+		title = selectedTitle.Render(title)
 		desc = s.SelectedDesc.Render(desc)
 	default:
 		if isFiltered {
-			unmatched := s.NormalTitle.Inline(true)
+			unmatched := normalTitle.Inline(true)
 			matched := unmatched.Inherit(s.FilterMatch)
 			title = lipgloss.StyleRunes(title, matchedRunes, matched, unmatched)
 		}
-		title = s.NormalTitle.Render(title)
+		title = normalTitle.Render(title)
 		desc = s.NormalDesc.Render(desc)
 	}
 
