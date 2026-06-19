@@ -166,7 +166,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "ctrl+n":
 				m.state = ViewAddProject
-				m.addProject = addproject.New()
+				m.addProject = addproject.New(m.scopeDir)
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if p, ok := m.projectList.SelectedProject(); ok {

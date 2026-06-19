@@ -37,6 +37,7 @@ type AppModel struct {
 	mux         mux.Multiplexer
 	projects    []model.Project
 	settings    config.Settings
+	scopeDir    string
 	width       int
 	height      int
 }
@@ -45,7 +46,9 @@ type AppModel struct {
 // multiplexer) it starts in onboarding seeded with the installed set;
 // otherwise it starts in the project list with active wired in. Settings are
 // loaded and applied to the project list so status icons render correctly.
-func NewAppModel(projects []model.Project, active mux.Multiplexer, installed []mux.Kind) AppModel {
+// scopeDir, when non-empty, is the folder the session is scoped to and is used
+// to seed the add-project picker.
+func NewAppModel(projects []model.Project, active mux.Multiplexer, installed []mux.Kind, scopeDir string) AppModel {
 	settings, _ := config.LoadSettings()
 	pl := projectlist.New(projects, defaultWidth, defaultHeight)
 	pl.SetSettings(settings)
@@ -55,6 +58,7 @@ func NewAppModel(projects []model.Project, active mux.Multiplexer, installed []m
 		projects:    projects,
 		mux:         active,
 		settings:    settings,
+		scopeDir:    scopeDir,
 		width:       defaultWidth,
 		height:      defaultHeight,
 	}

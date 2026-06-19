@@ -57,7 +57,7 @@ func TestUpdateStatusComputedMsg(t *testing.T) {
 		{ID: "p1", Name: "proj1", Path: t.TempDir()},
 	}
 
-	m := NewAppModel(projects, tmux.Backend{}, nil)
+	m := NewAppModel(projects, tmux.Backend{}, nil, "")
 
 	active := map[string]bool{"p1": true}
 	agents := map[string][]agent.Status{
@@ -95,7 +95,7 @@ func TestUpdateStatusComputedMsg(t *testing.T) {
 func TestUpdateTickMsgReturnsBatch(t *testing.T) {
 	tempXDGDir(t)
 	projects := []model.Project{}
-	m := NewAppModel(projects, tmux.Backend{}, nil)
+	m := NewAppModel(projects, tmux.Backend{}, nil, "")
 
 	result, cmd := m.Update(TickMsg{})
 	if result == nil {
