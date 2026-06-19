@@ -2,6 +2,8 @@
 
 A project-based terminal session manager written in Go with a bubbletea TUI. Launch and manage persistent tmux or zellij sessions for your projects: detach without killing, reattach to resume exactly where you left off.
 
+> **Works with both tmux and zellij.** vibemux detects which multiplexers you have installed and lets you pick one on first run. Sessions are plain multiplexer sessions, so all your existing config, plugins, and keybindings keep working.
+
 ## What it does
 
 `vibemux` lets you:
@@ -127,10 +129,10 @@ Each project row displays an icon representing the state of the agent (e.g. Clau
 |------|-------|---------|
 | 🦾 | working | Agent is actively running a task |
 | ✅ | done | Agent completed its last task |
-| ‼️ | blocked | Agent is waiting for input or hit an error |
+| ❗ | blocked | Agent is waiting for input or hit an error |
 | 🫠 | stale | Agent status is outdated (no recent update) |
 | ⚪ | active | Session is open but no agent detected |
-| ⊘ | no_git | Project directory is not a git repository (configurable via `icons.no_git`) |
+| (none) | no_git | Project directory is not a git repository. Blank by default; set `icons.no_git` to show a glyph if you want one |
 
 ### Git glyphs
 
@@ -170,10 +172,10 @@ Global settings live in `~/.config/vibemux/config.json` (XDG Base Directory comp
   "icons": {
     "working": "🦾",
     "done": "✅",
-    "blocked": "‼️",
+    "blocked": "❗",
     "stale": "🫠",
     "active": "⚪",
-    "no_git": "⊘"
+    "no_git": ""
   },
   "local_refresh_ms": 3000,
   "stale_threshold_sec": 600,
