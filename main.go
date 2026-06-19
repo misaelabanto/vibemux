@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/misaelabanto/vibemux/internal/app"
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/hookinstall"
+	"github.com/misaelabanto/vibemux/internal/model"
 	"github.com/misaelabanto/vibemux/internal/mux"
 )
 
@@ -85,11 +87,24 @@ func main() {
 		return
 	}
 
+	// A non-subcommand first argument scopes the TUI to registered projects at
+	// or under that folder. The list opens empty when nothing matches (and even
+	// when the folder does not exist); scopeDir is "" when no argument is given.
+	var scopeDir string
+	if len(os.Args) > 1 {
+		if abs, absErr := filepath.Abs(os.Args[1]); absErr == nil {
+			scopeDir = filepath.Clean(abs)
+		} else {
+			scopeDir = filepath.Clean(os.Args[1])
+		}
+	}
+
 	projects, err := config.LoadProjects()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading projects: %v\n", err)
 		os.Exit(1)
 	}
+	projects = model.ProjectsUnder(projects, scopeDir)
 
 	settings, err := config.LoadSettings()
 	if err != nil {
@@ -110,7 +125,7 @@ func main() {
 		}
 	}
 
-	m := app.NewAppModel(projects, active, installed)
+	m := app.NewAppModel(projects, active, installed, scopeDir)
 	// Show the hook-consent prompt only when no onboarding is needed (a
 	// multiplexer is already active) and the user has neither installed nor
 	// declined the hooks.
