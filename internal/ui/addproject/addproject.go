@@ -55,6 +55,11 @@ type Model struct {
 	entries    []string
 	cursor     int
 
+	// parentDir is the directory chosen on the picker as the parent for the
+	// new folder / clone. It may differ from currentDir when the user selects
+	// a focused subdirectory rather than the opened directory.
+	parentDir string
+
 	// name input (used for both empty-folder name and clone URL)
 	nameInput nameInputModel
 
@@ -182,11 +187,17 @@ func (m Model) updatePickParent(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		// For Create / Clone, the "enter" key on the picker chooses the
-		// current directory as the parent and advances to the name step.
+		// For Create / Clone, the "enter" key on the picker chooses a parent
+		// directory and advances to the name step.
+		parent := m.currentDir
 		var title, hint, placeholder string
 		switch m.mode {
 		case ModeCreateEmpty:
+			// Create the new folder inside the focused subdirectory, falling
+			// back to the opened directory when the list is empty.
+			if len(m.entries) > 0 {
+				parent = filepath.Join(m.currentDir, m.entries[m.cursor])
+			}
 			title = "New folder name:"
 			hint = "enter create  esc back"
 			placeholder = "my-new-app"
@@ -195,7 +206,8 @@ func (m Model) updatePickParent(msg tea.Msg) (Model, tea.Cmd) {
 			hint = "enter clone  esc back"
 			placeholder = "owner/repo or git@github.com:owner/repo.git"
 		}
-		m.nameInput = newNameInput(title, hint, placeholder, m.currentDir)
+		m.parentDir = parent
+		m.nameInput = newNameInput(title, hint, placeholder, parent)
 		m.step = stepEnterName
 		return m, nil
 	}
@@ -224,7 +236,7 @@ func (m Model) updateNameInput(msg tea.Msg) (Model, tea.Cmd) {
 			m.nameInput.SetError(err.Error())
 			return m, cmd
 		}
-		target := filepath.Join(m.currentDir, name)
+		target := filepath.Join(m.parentDir, name)
 		if _, err := os.Stat(target); err == nil {
 			m.nameInput.SetError(fmt.Sprintf("%q already exists", name))
 			return m, cmd
@@ -239,7 +251,7 @@ func (m Model) updateNameInput(msg tea.Msg) (Model, tea.Cmd) {
 			m.nameInput.SetError(err.Error())
 			return m, cmd
 		}
-		target := filepath.Join(m.currentDir, dirName)
+		target := filepath.Join(m.parentDir, dirName)
 		if _, err := os.Stat(target); err == nil {
 			m.nameInput.SetError(fmt.Sprintf("%q already exists", dirName))
 			return m, cmd
@@ -248,7 +260,7 @@ func (m Model) updateNameInput(msg tea.Msg) (Model, tea.Cmd) {
 		m.cancel = cancel
 		m.running = newSpinner("Cloning " + url)
 		m.step = stepRunning
-		return m, tea.Batch(m.running.Init(), runClone(ctx, url, m.currentDir, dirName))
+		return m, tea.Batch(m.running.Init(), runClone(ctx, url, m.parentDir, dirName))
 	}
 	return m, cmd
 }
@@ -340,7 +352,7 @@ func (m Model) viewParent() string {
 		help = "  ↑↓ move  space/→ in  ← out  enter select  esc back  ctrl+c cancel"
 	case ModeCreateEmpty:
 		prompt = "  Pick a parent directory for the new folder:"
-		help = "  ↑↓ move  space/→ in  ← out  enter use this dir  esc back  ctrl+c cancel"
+		help = "  ↑↓ move  space/→ in  ← out  enter use focused dir  esc back  ctrl+c cancel"
 	case ModeClone:
 		prompt = "  Pick a parent directory to clone into:"
 		help = "  ↑↓ move  space/→ in  ← out  enter use this dir  esc back  ctrl+c cancel"
