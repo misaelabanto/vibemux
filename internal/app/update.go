@@ -33,8 +33,10 @@ func (m AppModel) Init() tea.Cmd {
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case MultiplexerReturnedMsg:
-		// User detached or the session ended: return to project list.
+		// User detached or the session ended: return to project list. Reapply the
+		// scope filter so a scoped session does not reveal every project on reload.
 		projects, _ := config.LoadProjects()
+		projects = model.ProjectsUnder(projects, m.scopeDir)
 		m.projects = projects
 		prevActiveOnly := m.projectList.ShowActiveOnly()
 		m.projectList = projectlist.New(projects, m.width, m.height)
@@ -173,6 +175,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mux.KillSession(m.mux.SessionName(p.Path))
 					config.RemoveProject(p.ID)
 					projects, _ := config.LoadProjects()
+					projects = model.ProjectsUnder(projects, m.scopeDir)
 					m.projects = projects
 					cmd := m.projectList.SetProjects(projects)
 					return m, tea.Batch(cmd, computeStatus(m.projects, m.mux))

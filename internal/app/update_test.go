@@ -1,10 +1,12 @@
 package app
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/misaelabanto/vibemux/internal/agent"
+	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/gitstatus"
 	"github.com/misaelabanto/vibemux/internal/model"
 	"github.com/misaelabanto/vibemux/internal/tmux"
@@ -103,5 +105,35 @@ func TestUpdateTickMsgReturnsBatch(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("Update on TickMsg returned nil cmd, want batch cmd")
+	}
+}
+
+// TestMultiplexerReturnedReappliesScope verifies that detaching from a session
+// (MultiplexerReturnedMsg) reloads projects but keeps the scope filter applied,
+// rather than showing every registered project.
+func TestMultiplexerReturnedReappliesScope(t *testing.T) {
+	tempXDGDir(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	root := t.TempDir()
+	scopeDir := filepath.Join(root, "scope")
+	inside := model.Project{ID: "in", Name: "inside", Path: filepath.Join(scopeDir, "proj-a")}
+	outside := model.Project{ID: "out", Name: "outside", Path: filepath.Join(root, "other", "proj-b")}
+
+	if err := config.SaveProjects([]model.Project{inside, outside}); err != nil {
+		t.Fatalf("SaveProjects: %v", err)
+	}
+
+	scoped := model.ProjectsUnder([]model.Project{inside, outside}, scopeDir)
+	m := NewAppModel(scoped, tmux.Backend{}, nil, scopeDir)
+
+	result, _ := m.Update(MultiplexerReturnedMsg{})
+	app, ok := result.(AppModel)
+	if !ok {
+		t.Fatalf("expected AppModel, got %T", result)
+	}
+
+	if len(app.projects) != 1 || app.projects[0].ID != "in" {
+		t.Fatalf("after detach, want only scoped project [in], got %+v", app.projects)
 	}
 }
