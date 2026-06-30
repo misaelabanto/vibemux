@@ -15,11 +15,19 @@ type nameInputModel struct {
 	canceled bool
 }
 
-func newNameInput(title, hint, placeholder, parent string) nameInputModel {
+func newNameInput(title, hint, placeholder, parent string, width int) nameInputModel {
 	ti := textinput.New()
 	ti.Placeholder = placeholder
 	ti.Focus()
 	ti.CharLimit = 256
+	// Without an explicit width the textinput renders only the first
+	// placeholder rune (it sizes its buffer to Width()+1). Give it room for
+	// the full placeholder, capped to the available terminal width.
+	inputWidth := len(placeholder) + 1
+	if width > 4 && width-4 < inputWidth {
+		inputWidth = width - 4
+	}
+	ti.SetWidth(inputWidth)
 	return nameInputModel{
 		title:  title,
 		hint:   hint,

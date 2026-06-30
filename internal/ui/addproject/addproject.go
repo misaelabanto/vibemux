@@ -202,12 +202,17 @@ func (m Model) updatePickParent(msg tea.Msg) (Model, tea.Cmd) {
 			hint = "enter create  esc back"
 			placeholder = "my-new-app"
 		case ModeClone:
+			// Clone into the focused subdirectory, falling back to the
+			// opened directory when the list is empty.
+			if len(m.entries) > 0 {
+				parent = filepath.Join(m.currentDir, m.entries[m.cursor])
+			}
 			title = "Repo URL or owner/repo:"
 			hint = "enter clone  esc back"
 			placeholder = "owner/repo or git@github.com:owner/repo.git"
 		}
 		m.parentDir = parent
-		m.nameInput = newNameInput(title, hint, placeholder, parent)
+		m.nameInput = newNameInput(title, hint, placeholder, parent, m.width)
 		m.step = stepEnterName
 		return m, nil
 	}
@@ -355,7 +360,7 @@ func (m Model) viewParent() string {
 		help = "  ↑↓ move  space/→ in  ← out  enter use focused dir  esc back  ctrl+c cancel"
 	case ModeClone:
 		prompt = "  Pick a parent directory to clone into:"
-		help = "  ↑↓ move  space/→ in  ← out  enter use this dir  esc back  ctrl+c cancel"
+		help = "  ↑↓ move  space/→ in  ← out  enter use focused dir  esc back  ctrl+c cancel"
 	}
 
 	path := dimStyle.Render("  " + m.currentDir)
