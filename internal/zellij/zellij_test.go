@@ -1,6 +1,8 @@
 package zellij
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -10,9 +12,19 @@ var b = Backend{}
 
 // isolate points zellij at throwaway socket and cache directories so the
 // tests never touch (or see) the user's real sessions.
+//
+// The socket dir is anchored at /tmp rather than t.TempDir() because the
+// latter nests the test name under $TMPDIR, and zellij's socket path
+// (<socket dir>/contract_version_1/<session name>) must stay under the 103-byte
+// unix socket limit. On macOS that combination overflows on its own.
 func isolate(t *testing.T) {
 	t.Helper()
-	t.Setenv("ZELLIJ_SOCKET_DIR", t.TempDir())
+	sockets, err := os.MkdirTemp("/tmp", "vmxtest")
+	if err != nil {
+		t.Fatalf("creating socket dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(sockets) })
+	t.Setenv("ZELLIJ_SOCKET_DIR", sockets)
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 }
 
@@ -40,6 +52,33 @@ func TestName(t *testing.T) {
 func TestSessionName(t *testing.T) {
 	if got := b.SessionName("/home/u/code/myproject"); got != "vmx-myproject" {
 		t.Errorf("SessionName() = %q, want %q", got, "vmx-myproject")
+	}
+}
+
+// TestSocketDirFitsLongProjectNames verifies the default socket dir leaves
+// room for a realistically long project name. zellij's socket path is
+// <socket dir>/contract_version_1/<session name> and cannot exceed
+// maxSocketPath bytes; under macOS's per-user $TMPDIR the platform default
+// left only ~24 bytes for the name, so opening a project like
+// "agendalo-nuxt-frontend" failed with a bare exit status 1.
+func TestSocketDirFitsLongProjectNames(t *testing.T) {
+	t.Setenv("ZELLIJ_SOCKET_DIR", "")
+
+	name := b.SessionName("/Users/someone/code/agendalo/agendalo-nuxt-frontend")
+	path := filepath.Join(socketDir(), "contract_version_1", name)
+	if len(path) > maxSocketPath {
+		t.Errorf("socket path for %q is %d bytes, want at most %d: %s",
+			name, len(path), maxSocketPath, path)
+	}
+}
+
+// TestSocketDirRespectsEnv verifies a user-set ZELLIJ_SOCKET_DIR wins over
+// vibemux's default, which is also what keeps the tests isolated.
+func TestSocketDirRespectsEnv(t *testing.T) {
+	t.Setenv("ZELLIJ_SOCKET_DIR", "/tmp/mine")
+
+	if got := socketDir(); got != "/tmp/mine" {
+		t.Errorf("socketDir() = %q, want %q", got, "/tmp/mine")
 	}
 }
 

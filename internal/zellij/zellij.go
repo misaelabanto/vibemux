@@ -5,10 +5,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 const sessionPrefix = "vmx-"
+
+// maxSocketPath is the longest unix domain socket path zellij will accept. It
+// is the platform's sun_path limit (104 bytes) minus the terminating NUL.
+const maxSocketPath = 103
 
 // Backend drives zellij. It has no state; methods shell out to the zellij
 // binary resolved by binaryPath.
@@ -45,9 +50,48 @@ func binaryPath() string {
 	return ""
 }
 
-// command builds an *exec.Cmd for the resolved zellij binary.
+// socketDir returns the directory zellij should place its IPC sockets in.
+//
+// zellij builds a unix socket path of <socket dir>/contract_version_1/<session
+// name>, and a unix socket path cannot exceed 103 bytes. zellij's default
+// socket dir is $TMPDIR/zellij-<uid>, and on macOS $TMPDIR is a ~49-byte
+// per-user path, which leaves only ~24 bytes for the session name: a project
+// named "agendalo-nuxt-frontend" overflows the limit and zellij fails with a
+// bare exit status 1. Anchoring the socket dir at /tmp buys the budget back so
+// any realistic project name fits. On Linux, where $TMPDIR is normally /tmp
+// already, this is the path zellij would have chosen anyway.
+//
+// A ZELLIJ_SOCKET_DIR already present in the environment is the user's own
+// choice and is left alone.
+func socketDir() string {
+	if dir := os.Getenv("ZELLIJ_SOCKET_DIR"); dir != "" {
+		return dir
+	}
+	return filepath.Join("/tmp", "zellij-"+strconv.Itoa(os.Getuid()))
+}
+
+// command builds an *exec.Cmd for the resolved zellij binary. Every zellij
+// invocation shares one socket dir so that sessions created by vibemux are the
+// same ones it lists, attaches to, and kills.
 func command(args ...string) *exec.Cmd {
-	return exec.Command(binaryPath(), args...)
+	cmd := exec.Command(binaryPath(), args...)
+	cmd.Env = append(os.Environ(), "ZELLIJ_SOCKET_DIR="+socketDir())
+	return cmd
+}
+
+// run executes cmd and, on failure, wraps the exit error with whatever zellij
+// wrote to stderr. zellij reports the real cause there (a too-long socket
+// path, an unreadable config) while exiting with an otherwise opaque status 1.
+func run(cmd *exec.Cmd) error {
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+	}
+	return err
 }
 
 // IsInstalled checks whether zellij is available on PATH or in ~/.local/bin.
@@ -109,7 +153,7 @@ func (Backend) NewSession(name, dir string) error {
 	_ = command("delete-session", "--force", name).Run()
 	cmd := command("--config", cfg, "attach", "--create-background", name, "options", "--default-cwd", dir)
 	cmd.Dir = dir
-	return cmd.Run()
+	return run(cmd)
 }
 
 // effectiveConfigPath returns the config file zellij would normally load, as
@@ -170,7 +214,7 @@ func (Backend) AttachCommand(name string) *exec.Cmd {
 // session is also deleted, best effort, to match tmux semantics where a
 // killed session is gone.
 func (Backend) KillSession(name string) error {
-	err := command("kill-session", name).Run()
+	err := run(command("kill-session", name))
 	_ = command("delete-session", "--force", name).Run()
 	return err
 }
