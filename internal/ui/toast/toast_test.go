@@ -93,25 +93,37 @@ func TestRenderTinyWidthDoesNotAutosize(t *testing.T) {
 // depends on: Style.Width sets the total rendered width, border and padding
 // included. If a future lipgloss made Width mean interior width instead, the
 // box would render wider than its budget and overflow the canvas.
+//
+// wantWidth is written out as the literal 60, not maxBoxWidth, on purpose: if
+// this asserted against the constant it mirrors, changing maxBoxWidth would
+// change the expectation right along with the bug, and the test could never
+// fail no matter what the cap became. The point is to notice when the cap
+// value drifts, so the check has to live outside the value being checked.
 func TestRenderWidthIsTotalNotInterior(t *testing.T) {
 	model := New()
 	model.Show(KindError, "a short message")
 
 	const terminalWidth = 80
+	const wantWidth = 60
 	got := lipgloss.Width(model.Render(terminalWidth))
-	if got != maxBoxWidth {
-		t.Errorf("Render(%d) rendered %d columns, want %d", terminalWidth, got, maxBoxWidth)
+	if got != wantWidth {
+		t.Errorf("Render(%d) rendered %d columns, want %d", terminalWidth, got, wantWidth)
 	}
 }
 
 // TestRenderWidthAtMidRangeAppliesMargin covers the plain maxWidth-screenMargin
 // arithmetic on its own, at a width where neither the floor nor the cap binds.
+//
+// wantWidth is written out as the literal 36, not terminalWidth-screenMargin,
+// on purpose: deriving it from screenMargin would make this test restate the
+// production code's own arithmetic instead of checking it, so it would still
+// pass even if screenMargin silently changed to the wrong value.
 func TestRenderWidthAtMidRangeAppliesMargin(t *testing.T) {
 	model := New()
 	model.Show(KindError, "a short message")
 
 	const terminalWidth = 40
-	const wantWidth = terminalWidth - screenMargin
+	const wantWidth = 36
 	got := lipgloss.Width(model.Render(terminalWidth))
 	if got != wantWidth {
 		t.Errorf("Render(%d) rendered %d columns, want %d", terminalWidth, got, wantWidth)
