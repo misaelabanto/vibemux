@@ -136,7 +136,7 @@ func (m AppModel) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// ClearChoice matters: hasChosen is sticky, so without resetting it
 			// every later message would replay this same failing path.
 			m.onboarding.ClearChoice()
-			return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not initialize %s: %v", k, err))
+			return m, tea.Batch(cmd, m.toast.Show(toast.KindError, fmt.Sprintf("Could not initialize %s: %v", k, err)))
 		}
 
 		// Load, modify, save so the status-display settings are preserved.
@@ -220,10 +220,21 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// that as a failure would be noise, not information.
 					name := m.mux.SessionName(selected.Path)
 					if m.mux.HasSession(name) {
-						m.mux.KillSession(name)
+						if err := m.mux.KillSession(name); err != nil {
+							// Do not proceed to remove the Project: a failed kill
+							// would otherwise leave an orphaned session with no
+							// Project left to surface it in the dashboard.
+							return m, tea.Batch(
+								computeStatus(m.projects, m.mux),
+								m.toast.Show(toast.KindError, fmt.Sprintf("Could not kill session: %v", err)),
+							)
+						}
 					}
 					if err := config.RemoveProject(selected.ID); err != nil {
-						return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not remove Project: %v", err))
+						return m, tea.Batch(
+							computeStatus(m.projects, m.mux),
+							m.toast.Show(toast.KindError, fmt.Sprintf("Could not remove Project: %v", err)),
+						)
 					}
 					projects, _ := config.LoadProjects()
 					projects = model.ProjectsUnder(projects, m.scopeDir)

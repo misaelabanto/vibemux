@@ -267,3 +267,169 @@ func TestKillSessionOnActiveProjectConfirms(t *testing.T) {
 		t.Error("no confirmation toast after killing a live Session")
 	}
 }
+
+// TestRemoveProjectOnInactiveProjectSkipsKill mirrors
+// TestKillSessionOnInactiveProjectIsSilent for ctrl+d: an inactive Project has
+// no Session to kill, so KillSession must never be called, but the Project is
+// still removed and a confirmation toast names it.
+func TestRemoveProjectOnInactiveProjectSkipsKill(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project, err := config.AddProject(dir)
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if len(fake.killSessionCalls) != 0 {
+		t.Errorf("KillSession called %d times for an inactive Project, want 0", len(fake.killSessionCalls))
+	}
+	if !result.toast.Visible() {
+		t.Fatal("no confirmation toast after removing an inactive Project")
+	}
+	if !strings.Contains(result.toast.Message(), project.Name) {
+		t.Errorf("toast = %q, want it to name the removed Project %q", result.toast.Message(), project.Name)
+	}
+	remaining, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("LoadProjects() = %v, want the Project removed from disk", remaining)
+	}
+}
+
+// TestRemoveProjectOnActiveProjectKillsSession mirrors
+// TestKillSessionOnActiveProjectConfirms for ctrl+d: an active Project's
+// Session must be killed before the Project is removed.
+func TestRemoveProjectOnActiveProjectKillsSession(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project, err := config.AddProject(dir)
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	fake.sessions[fake.SessionName(dir)] = true
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if len(fake.killSessionCalls) != 1 {
+		t.Fatalf("KillSession called %d times, want 1", len(fake.killSessionCalls))
+	}
+	if !result.toast.Visible() {
+		t.Fatal("no confirmation toast after removing an active Project")
+	}
+	if !strings.Contains(result.toast.Message(), project.Name) {
+		t.Errorf("toast = %q, want it to name the removed Project %q", result.toast.Message(), project.Name)
+	}
+	remaining, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("LoadProjects() = %v, want the Project removed from disk", remaining)
+	}
+}
+
+// TestRemoveProjectKillFailureBlocksRemoval verifies the fix for the brief's
+// bug: a KillSession failure must raise an error toast and must NOT proceed
+// to RemoveProject. Without the short-circuit, a failed kill would leave an
+// orphaned vmx-<dir> session with no Project left to surface it anywhere.
+func TestRemoveProjectKillFailureBlocksRemoval(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project, err := config.AddProject(dir)
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	fake.sessions[fake.SessionName(dir)] = true
+	fake.killSessionErr = errors.New("boom")
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if !result.toast.Visible() {
+		t.Fatal("no error toast after a failed KillSession")
+	}
+	if !strings.Contains(result.toast.Message(), "boom") {
+		t.Errorf("toast = %q, want it to carry the underlying kill error", result.toast.Message())
+	}
+	if len(result.projects) != 1 {
+		t.Errorf("in-memory projects = %v, want the Project left in place after a failed kill", result.projects)
+	}
+	remaining, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Errorf("LoadProjects() = %v, want the Project still on disk after a failed kill", remaining)
+	}
+}
+
+// TestRemoveProjectSaveFailureLeavesProjectInPlace verifies that when
+// config.RemoveProject itself fails (the write to projects.json errors), the
+// handler raises an error toast and does not touch in-memory state, so the
+// dashboard and projects.json stay in agreement.
+func TestRemoveProjectSaveFailureLeavesProjectInPlace(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project, err := config.AddProject(dir)
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+
+	// Make the subsequent write in RemoveProject fail: projects.json exists
+	// (AddProject just wrote it), so stripping write permission from the file
+	// itself makes the os.WriteFile inside config.SaveProjects error out.
+	projectsFile := config.ProjectsFile()
+	if err := os.Chmod(projectsFile, 0o400); err != nil {
+		t.Fatalf("Chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(projectsFile, 0o644) })
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'd', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if !result.toast.Visible() {
+		t.Fatal("no error toast after a failed RemoveProject")
+	}
+	// Must be the failure toast, not the "Removed <name>" confirmation: without
+	// the short-circuit, the handler falls through to the success path and
+	// claims a removal that never happened.
+	if !strings.Contains(result.toast.Message(), "Could not remove Project") {
+		t.Errorf("toast = %q, want the failure message, not a false confirmation", result.toast.Message())
+	}
+	if len(result.projects) != 1 {
+		t.Errorf("in-memory projects = %v, want the Project left in place after a failed removal", result.projects)
+	}
+
+	if err := os.Chmod(projectsFile, 0o644); err != nil {
+		t.Fatalf("Chmod restore: %v", err)
+	}
+	remaining, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Errorf("LoadProjects() = %v, want the Project still on disk after a failed removal", remaining)
+	}
+}
