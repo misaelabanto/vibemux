@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func TestShowMakesVisible(t *testing.T) {
@@ -82,8 +83,8 @@ func TestRenderTinyWidthDoesNotAutosize(t *testing.T) {
 
 	out := model.Render(2)
 	for _, line := range strings.Split(out, "\n") {
-		if len([]rune(line)) > 40 {
-			t.Fatalf("Render(2) produced a %d-rune line, want the clamp to hold it near the 20-column floor", len([]rune(line)))
+		if lipgloss.Width(line) > maxBoxWidth {
+			t.Fatalf("Render(2) produced a %d-column line, want the clamp to hold it at or under %d", lipgloss.Width(line), maxBoxWidth)
 		}
 	}
 }

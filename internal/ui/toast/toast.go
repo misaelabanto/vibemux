@@ -10,7 +10,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/misaelabanto/vibemux/internal/ui/styles"
 )
@@ -119,17 +118,10 @@ func (m Model) Render(maxWidth int) string {
 
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
 		Padding(0, 1).
 		Width(boxWidth)
 
-	plain := box.Render(m.message)
-
-	// lipgloss recolors every border segment and every text line on its own,
-	// via BorderForeground/Foreground: fine at normal widths, but on a narrow
-	// box the repeated escape sequences balloon the raw byte length far past
-	// what's visible. A single open/reset pair wrapped around the whole
-	// rendered block produces the identical color on screen, since SGR state
-	// persists across newlines, without paying that per-line cost.
-	open := ansi.Style{}.ForegroundColor(borderColor).String()
-	return open + plain + ansi.ResetStyle
+	text := lipgloss.NewStyle().Foreground(borderColor).Render(m.message)
+	return box.Render(text)
 }
