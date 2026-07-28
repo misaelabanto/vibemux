@@ -102,6 +102,10 @@ func (m Model) Visible() bool { return m.visible }
 // and carries ANSI codes, so tests assert against this instead.
 func (m Model) Message() string { return m.message }
 
+// CurrentSeq returns the sequence number of the current toast. It exists so
+// callers and tests can construct the ExpiredMsg that matches it.
+func (m Model) CurrentSeq() int { return m.seq }
+
 // Render draws the toast box, sized to fit within maxWidth. Returns the empty
 // string when no toast is visible.
 func (m Model) Render(maxWidth int) string {
