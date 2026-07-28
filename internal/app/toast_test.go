@@ -1,11 +1,15 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/misaelabanto/vibemux/internal/config"
+	"github.com/misaelabanto/vibemux/internal/model"
 	"github.com/misaelabanto/vibemux/internal/ui/toast"
 )
 
@@ -81,5 +85,107 @@ func TestToastClearsOnExpiry(t *testing.T) {
 	updated, _ := model.Update(toast.ExpiredMsg{Seq: seq})
 	if updated.(AppModel).toast.Visible() {
 		t.Error("toast still visible after its ExpiredMsg reached AppModel.Update")
+	}
+}
+
+// TestOpenMissingDirectoryToastsAndStops verifies the pre-check names the
+// cause and never lets the multiplexer try to chdir into a directory that is
+// not there. That attempt is what produced the bare "exit status 1" written
+// straight to a live alternate screen.
+func TestOpenMissingDirectoryToastsAndStops(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	missing := filepath.Join(t.TempDir(), "deleted-project")
+	project := model.Project{ID: "p1", Name: "deleted", Path: missing}
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	updated, _ := appModel.openProject(project)
+	result := updated.(AppModel)
+
+	if !result.toast.Visible() {
+		t.Fatal("no toast raised for a missing Project directory")
+	}
+	if !strings.Contains(result.toast.Message(), missing) {
+		t.Errorf("toast = %q, want it to name the missing path %q", result.toast.Message(), missing)
+	}
+	if len(fake.newSessionCalls) != 0 {
+		t.Errorf("NewSession was called %v times, want 0: the pre-check must return first", len(fake.newSessionCalls))
+	}
+}
+
+// TestOpenMissingDirectoryDoesNotTouchProject verifies a failed open does not
+// bump the Project's last-used timestamp, which would reorder the dashboard
+// to reward a Project that could not be opened.
+func TestOpenMissingDirectoryDoesNotTouchProject(t *testing.T) {
+	tempXDGDir(t)
+	existing := t.TempDir()
+	project, err := config.AddProject(existing)
+	if err != nil {
+		t.Fatalf("AddProject: %v", err)
+	}
+	if err := os.RemoveAll(existing); err != nil {
+		t.Fatalf("RemoveAll: %v", err)
+	}
+
+	before, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+
+	appModel := NewAppModel([]model.Project{project}, newFakeMux(), nil, "")
+	appModel.openProject(project)
+
+	after, err := config.LoadProjects()
+	if err != nil {
+		t.Fatalf("LoadProjects: %v", err)
+	}
+	if len(before) != 1 || len(after) != 1 {
+		t.Fatalf("expected exactly one Project before and after, got %d and %d", len(before), len(after))
+	}
+	if !before[0].LastUsed.Equal(after[0].LastUsed) {
+		t.Errorf("LastUsed changed from %v to %v after a failed open", before[0].LastUsed, after[0].LastUsed)
+	}
+}
+
+// TestOpenMissingDirectoryWithLiveSessionStillAttaches verifies the pre-check
+// gates Session creation only. When a Session is already alive its process is
+// running on the multiplexer server, and the user may need to reach whatever
+// is inside it. Blocking that would prevent recovery without preventing any
+// failure, since attaching does not touch the missing path.
+func TestOpenMissingDirectoryWithLiveSessionStillAttaches(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	missing := filepath.Join(t.TempDir(), "deleted-project")
+	project := model.Project{ID: "p1", Name: "deleted", Path: missing}
+	fake.sessions[fake.SessionName(missing)] = true
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	updated, cmd := appModel.openProject(project)
+
+	if updated.(AppModel).toast.Visible() {
+		t.Errorf("toast raised for a live Session: %q", updated.(AppModel).toast.Message())
+	}
+	if cmd == nil {
+		t.Error("openProject returned a nil cmd, want the attach command")
+	}
+}
+
+// TestOpenNotInstalledToasts covers the multiplexer-not-installed path that
+// used to write to stderr.
+func TestOpenNotInstalledToasts(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	fake.installed = false
+	project := model.Project{ID: "p1", Name: "proj", Path: t.TempDir()}
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	updated, _ := appModel.openProject(project)
+
+	result := updated.(AppModel)
+	if !result.toast.Visible() {
+		t.Fatal("no toast raised when the multiplexer is not installed")
+	}
+	if !strings.Contains(result.toast.Message(), "not installed") {
+		t.Errorf("toast = %q, want it to mention the multiplexer is not installed", result.toast.Message())
 	}
 }

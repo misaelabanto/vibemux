@@ -16,6 +16,7 @@ import (
 	"github.com/misaelabanto/vibemux/internal/mux"
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
+	"github.com/misaelabanto/vibemux/internal/ui/toast"
 )
 
 func (m AppModel) Init() tea.Cmd {
@@ -254,22 +255,29 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
-	config.TouchProject(p.ID)
-
 	if !m.mux.IsInstalled() {
-		fmt.Fprintf(os.Stderr, "%s is not installed\n", m.mux.Name())
-		return m, nil
+		return m, m.toast.Show(toast.KindError, fmt.Sprintf("%s is not installed", m.mux.Name()))
 	}
 
 	name := m.mux.SessionName(p.Path)
 
-	// Create a new session if one doesn't already exist.
+	// The directory is only checked when a Session has to be created. An
+	// existing Session is already running on the multiplexer server and
+	// attaching to it does not touch the path, so a Project whose directory
+	// was deleted can still be reached to recover whatever is inside it.
 	if !m.mux.HasSession(name) {
+		if _, err := os.Stat(p.Path); err != nil {
+			if os.IsNotExist(err) {
+				return m, m.toast.Show(toast.KindError, fmt.Sprintf("Project directory not found: %s", p.Path))
+			}
+			return m, m.toast.Show(toast.KindError, fmt.Sprintf("Cannot open %s: %v", p.Path, err))
+		}
 		if err := m.mux.NewSession(name, p.Path); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating %s session: %v\n", m.mux.Name(), err)
-			return m, nil
+			return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not create session: %v", err))
 		}
 	}
+
+	config.TouchProject(p.ID)
 
 	execCmd := tea.ExecProcess(m.mux.AttachCommand(name), func(err error) tea.Msg {
 		return MultiplexerReturnedMsg{Err: err}
