@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,21 @@ func exactTarget(name string) string {
 	return "=" + name
 }
 
+// run executes cmd and folds any stderr it produced into the returned error.
+// Bare exec errors are just "exit status 1", which is useless in a toast, so
+// the child's own diagnostic is carried out to the caller.
+func run(cmd *exec.Cmd) error {
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+	}
+	return err
+}
+
 // HasSession checks whether a tmux session with the given name exists.
 func (Backend) HasSession(name string) bool {
 	err := exec.Command("tmux", "has-session", "-t", exactTarget(name)).Run()
@@ -48,7 +64,7 @@ func (Backend) HasSession(name string) bool {
 // NewSession creates a new detached tmux session with the given name and
 // working directory.
 func (Backend) NewSession(name, dir string) error {
-	return exec.Command("tmux", "new-session", "-d", "-s", name, "-c", dir).Run()
+	return run(exec.Command("tmux", "new-session", "-d", "-s", name, "-c", dir))
 }
 
 // AttachCommand returns an *exec.Cmd that attaches to the named tmux session.

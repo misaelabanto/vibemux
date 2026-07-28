@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,27 @@ func TestName(t *testing.T) {
 func TestSessionName(t *testing.T) {
 	if got := b.SessionName("/home/u/code/myproject"); got != "vmx-myproject" {
 		t.Errorf("SessionName() = %q, want %q", got, "vmx-myproject")
+	}
+}
+
+// TestRunWrapsStderr verifies that a failing command's stderr is folded into
+// the returned error. Without this a caller can only report "exit status 1",
+// which tells the user nothing about what actually went wrong.
+func TestRunWrapsStderr(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "echo 'no such directory' >&2; exit 1")
+
+	err := run(cmd)
+	if err == nil {
+		t.Fatal("run returned nil error for a command that exited 1")
+	}
+	if !strings.Contains(err.Error(), "no such directory") {
+		t.Errorf("err = %q, want it to contain the child's stderr", err.Error())
+	}
+}
+
+// TestRunSucceedsQuietly verifies the helper does not invent an error.
+func TestRunSucceedsQuietly(t *testing.T) {
+	if err := run(exec.Command("true")); err != nil {
+		t.Errorf("run(true) = %v, want nil", err)
 	}
 }
