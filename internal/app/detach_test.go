@@ -15,9 +15,6 @@ import (
 func detachModel(t *testing.T) AppModel {
 	t.Helper()
 	tempXDGDir(t)
-	// Redirect the config dir too. Without this, SaveProjects below writes to the
-	// real projects.json and destroys the user's project list.
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	projects := []model.Project{
 		{ID: "a", Name: "alpha", Path: t.TempDir()},

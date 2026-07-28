@@ -12,11 +12,20 @@ import (
 	"github.com/misaelabanto/vibemux/internal/tmux"
 )
 
+// tempXDGDir sandboxes every directory vibemux writes to and returns the agent
+// runtime dir.
+//
+// Both variables matter, and they point at different things: XDG_RUNTIME_DIR
+// holds the agent statuses, while XDG_CONFIG_HOME holds projects.json and
+// settings.json. Redirecting only the former leaves config.Dir() resolving to
+// the developer's real ~/.config/vibemux, so any test that saves projects or
+// settings overwrites their actual project list.
 func tempXDGDir(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", dir)
-	return dir
+	runtimeDir := t.TempDir()
+	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	return runtimeDir
 }
 
 // TestComputeStatusReturnsMsg verifies that calling the tea.Cmd returned by
@@ -113,7 +122,6 @@ func TestUpdateTickMsgReturnsBatch(t *testing.T) {
 // rather than showing every registered project.
 func TestMultiplexerReturnedReappliesScope(t *testing.T) {
 	tempXDGDir(t)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	root := t.TempDir()
 	scopeDir := filepath.Join(root, "scope")
