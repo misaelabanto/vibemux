@@ -38,9 +38,24 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		projects, _ := config.LoadProjects()
 		projects = model.ProjectsUnder(projects, m.scopeDir)
 		m.projects = projects
+
+		// The rebuilt list starts out knowing no status at all, so the status the
+		// previous sweep computed is carried across. Detaching does not change any
+		// of it: the session that was just left is still running, and the git
+		// worktrees are as they were. Without this the dashboard renders from an
+		// empty status until the next sweep lands, which with the active-only
+		// filter on means rendering nothing at all, since every project is judged
+		// inactive and filtered away.
 		prevActiveOnly := m.projectList.ShowActiveOnly()
+		prevActive := m.projectList.ActiveSessions()
+		prevAgents := m.projectList.Agents()
+		prevGit := m.projectList.GitStatus()
+
 		m.projectList = projectlist.New(projects, m.width, m.height)
 		m.projectList.SetSettings(m.settings)
+		m.projectList.SetActiveSessions(prevActive)
+		m.projectList.SetAgents(prevAgents)
+		m.projectList.SetGitStatus(prevGit)
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.state = ViewProjectList
 		return m, computeStatus(m.projects, m.mux)
@@ -281,39 +296,56 @@ func tick(s config.Settings) tea.Cmd {
 // computeStatus is a tea.Cmd that, off the UI goroutine, computes the full
 // local status: active multiplexer sessions, agent statuses grouped per
 // project (only for active projects), and git status per project.
+//
+// Sweeps are coalesced, so the burst of refresh triggers that arrives when a
+// multiplexer session is left costs one sweep rather than one each.
 func computeStatus(projects []model.Project, mx mux.Multiplexer) tea.Cmd {
 	return func() tea.Msg {
 		if mx == nil {
 			return StatusComputedMsg{}
 		}
+		return statusSweeps.do(func() StatusComputedMsg {
+			return sweepStatus(projects, mx)
+		})
+	}
+}
 
-		// Collect active multiplexer sessions.
-		sessions, _ := mx.ListVibemuxSessions()
-		active := mapSessionsToProjects(sessions, projects, mx)
+// sweepStatus performs one full status computation.
+func sweepStatus(projects []model.Project, mx mux.Multiplexer) StatusComputedMsg {
+	// Collect active multiplexer sessions.
+	sessions, _ := mx.ListVibemuxSessions()
+	active := mapSessionsToProjects(sessions, projects, mx)
 
-		// Load all agent statuses and group them by project.
-		statuses, _ := agent.LoadAll()
-		allAgents := agent.GroupByProject(statuses, projects)
+	// Load all agent statuses and group them by project.
+	statuses, _ := agent.LoadAll()
+	allAgents := agent.GroupByProject(statuses, projects)
 
-		// Gate agents on active: an agent cannot be live if its session is gone.
-		agentsByActive := make(map[string][]agent.Status, len(allAgents))
-		for id, ss := range allAgents {
-			if active[id] {
-				agentsByActive[id] = ss
-			}
+	// Gate agents on active: an agent cannot be live if its session is gone.
+	agentsByActive := make(map[string][]agent.Status, len(allAgents))
+	for id, ss := range allAgents {
+		if active[id] {
+			agentsByActive[id] = ss
 		}
+	}
 
-		// Compute git status for each project.
-		gitByProj := make(map[string]gitstatus.Status, len(projects))
-		for _, p := range projects {
-			gitByProj[p.ID] = gitstatus.Compute(p.Path)
-		}
+	// Compute git status for every project. The paths are swept together rather
+	// than one after another: each costs a git spawn plus a worktree scan, so a
+	// sequential sweep takes as long as the sum of every project while this
+	// takes about as long as the slowest one.
+	paths := make([]string, len(projects))
+	for i, p := range projects {
+		paths[i] = p.Path
+	}
+	byPath := gitstatus.ComputeAll(paths)
+	gitByProj := make(map[string]gitstatus.Status, len(projects))
+	for _, p := range projects {
+		gitByProj[p.ID] = byPath[p.Path]
+	}
 
-		return StatusComputedMsg{
-			Active: active,
-			Agents: agentsByActive,
-			Git:    gitByProj,
-		}
+	return StatusComputedMsg{
+		Active: active,
+		Agents: agentsByActive,
+		Git:    gitByProj,
 	}
 }
 
