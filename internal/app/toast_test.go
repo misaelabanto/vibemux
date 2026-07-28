@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,5 +188,82 @@ func TestOpenNotInstalledToasts(t *testing.T) {
 	}
 	if !strings.Contains(result.toast.Message(), "not installed") {
 		t.Errorf("toast = %q, want it to mention the multiplexer is not installed", result.toast.Message())
+	}
+}
+
+// TestMultiplexerReturnedErrorToasts verifies the error that used to be
+// dropped on the floor now surfaces.
+func TestMultiplexerReturnedErrorToasts(t *testing.T) {
+	tempXDGDir(t)
+	appModel := NewAppModel(nil, newFakeMux(), nil, "")
+
+	updated, _ := appModel.Update(MultiplexerReturnedMsg{Err: errors.New("session died")})
+
+	result := updated.(AppModel)
+	if !result.toast.Visible() {
+		t.Fatal("no toast raised for a non-nil MultiplexerReturnedMsg.Err")
+	}
+	if !strings.Contains(result.toast.Message(), "session died") {
+		t.Errorf("toast = %q, want it to carry the underlying error", result.toast.Message())
+	}
+}
+
+// TestMultiplexerReturnedCleanDetachIsSilent verifies a normal detach, which
+// exits zero, does not raise anything.
+func TestMultiplexerReturnedCleanDetachIsSilent(t *testing.T) {
+	tempXDGDir(t)
+	appModel := NewAppModel(nil, newFakeMux(), nil, "")
+
+	updated, _ := appModel.Update(MultiplexerReturnedMsg{Err: nil})
+
+	if updated.(AppModel).toast.Visible() {
+		t.Error("a clean detach raised a toast")
+	}
+}
+
+// TestKillSessionOnInactiveProjectIsSilent guards a regression this change
+// would otherwise introduce. tmux kill-session on a nonexistent session exits
+// 1, so attaching a toast to an unconditional KillSession would fire a useless
+// "exit status 1" every time ctrl+x is pressed on an inactive Project, where
+// today it is a silent no-op.
+func TestKillSessionOnInactiveProjectIsSilent(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	fake.killSessionErr = errors.New("no server running")
+	project := model.Project{ID: "p1", Name: "proj", Path: t.TempDir()}
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if len(fake.killSessionCalls) != 0 {
+		t.Errorf("KillSession called %d times for an inactive Project, want 0", len(fake.killSessionCalls))
+	}
+	if result.toast.Visible() && strings.Contains(result.toast.Message(), "no server running") {
+		t.Errorf("raised a useless backend error toast: %q", result.toast.Message())
+	}
+}
+
+// TestKillSessionOnActiveProjectConfirms verifies the confirmation path.
+func TestKillSessionOnActiveProjectConfirms(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project := model.Project{ID: "p1", Name: "proj", Path: dir}
+	fake.sessions[fake.SessionName(dir)] = true
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+	appModel.state = ViewProjectList
+
+	updated, _ := appModel.updateProjectList(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if len(fake.killSessionCalls) != 1 {
+		t.Fatalf("KillSession called %d times, want 1", len(fake.killSessionCalls))
+	}
+	if !result.toast.Visible() {
+		t.Error("no confirmation toast after killing a live Session")
 	}
 }

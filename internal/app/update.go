@@ -66,7 +66,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetGitStatus(prevGit)
 		m.projectList.SetShowActiveOnly(prevActiveOnly)
 		m.state = ViewProjectList
-		return m, computeStatus(m.projects, m.mux)
+
+		// Worded neutrally on purpose. A clean detach exits zero, but a Session
+		// killed out from under an attached client, or a client closed after
+		// another vibemux instance deleted the Session, surfaces a non-zero exit
+		// on what the user experienced as an ordinary exit.
+		var toastCmd tea.Cmd
+		if msg.Err != nil {
+			toastCmd = m.toast.Show(toast.KindError, fmt.Sprintf("Session exited: %v", msg.Err))
+		}
+		return m, tea.Batch(computeStatus(m.projects, m.mux), toastCmd)
 
 	case StatusComputedMsg:
 		// Each setter rebuilds the list items; when a filter is active, SetItems
@@ -122,16 +131,19 @@ func (m AppModel) updateOnboarding(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if k, ok := m.onboarding.Chosen(); ok {
+		active, err := mux.New(k)
+		if err != nil {
+			// ClearChoice matters: hasChosen is sticky, so without resetting it
+			// every later message would replay this same failing path.
+			m.onboarding.ClearChoice()
+			return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not initialize %s: %v", k, err))
+		}
+
 		// Load, modify, save so the status-display settings are preserved.
 		s, _ := config.LoadSettings()
 		s.Multiplexer = string(k)
 		_ = config.SaveSettings(s)
 
-		active, err := mux.New(k)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error initializing %s: %v\n", k, err)
-			return m, tea.Quit
-		}
 		m.mux = active
 		if needsConsent() {
 			m.state = ViewConsent
@@ -155,9 +167,17 @@ func (m AppModel) updateConsent(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "y", "Y":
-		_ = hookinstall.Install("vibemux")
 		m.state = ViewProjectList
-		return m, computeStatus(m.projects, m.mux)
+		if err := hookinstall.Install("vibemux"); err != nil {
+			return m, tea.Batch(
+				computeStatus(m.projects, m.mux),
+				m.toast.Show(toast.KindError, fmt.Sprintf("Could not install hooks: %v", err)),
+			)
+		}
+		return m, tea.Batch(
+			computeStatus(m.projects, m.mux),
+			m.toast.Show(toast.KindInfo, "Agent status tracking enabled"),
+		)
 	case "n", "N":
 		_ = setHooksDeclined()
 		m.state = ViewProjectList
@@ -194,19 +214,43 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addProject = addproject.New(m.scopeDir)
 				return m, m.addProject.Init()
 			case "ctrl+d":
-				if p, ok := m.projectList.SelectedProject(); ok {
-					m.mux.KillSession(m.mux.SessionName(p.Path))
-					config.RemoveProject(p.ID)
+				if selected, ok := m.projectList.SelectedProject(); ok {
+					// Gated on HasSession: kill-session against a session that is
+					// not there exits non-zero on both backends, and reporting
+					// that as a failure would be noise, not information.
+					name := m.mux.SessionName(selected.Path)
+					if m.mux.HasSession(name) {
+						m.mux.KillSession(name)
+					}
+					if err := config.RemoveProject(selected.ID); err != nil {
+						return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not remove Project: %v", err))
+					}
 					projects, _ := config.LoadProjects()
 					projects = model.ProjectsUnder(projects, m.scopeDir)
 					m.projects = projects
-					cmd := m.projectList.SetProjects(projects)
-					return m, tea.Batch(cmd, computeStatus(m.projects, m.mux))
+					setCmd := m.projectList.SetProjects(projects)
+					return m, tea.Batch(
+						setCmd,
+						computeStatus(m.projects, m.mux),
+						m.toast.Show(toast.KindInfo, fmt.Sprintf("Removed %s", selected.Name)),
+					)
 				}
 			case "ctrl+x":
-				if p, ok := m.projectList.SelectedProject(); ok {
-					m.mux.KillSession(m.mux.SessionName(p.Path))
-					return m, computeStatus(m.projects, m.mux)
+				if selected, ok := m.projectList.SelectedProject(); ok {
+					name := m.mux.SessionName(selected.Path)
+					if !m.mux.HasSession(name) {
+						return m, nil
+					}
+					if err := m.mux.KillSession(name); err != nil {
+						return m, tea.Batch(
+							computeStatus(m.projects, m.mux),
+							m.toast.Show(toast.KindError, fmt.Sprintf("Could not kill session: %v", err)),
+						)
+					}
+					return m, tea.Batch(
+						computeStatus(m.projects, m.mux),
+						m.toast.Show(toast.KindInfo, fmt.Sprintf("Killed session %s", name)),
+					)
 				}
 			case "ctrl+a":
 				cmd := m.projectList.ToggleActiveOnly()
@@ -239,16 +283,14 @@ func (m AppModel) updateAddProject(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if path := m.addProject.SelectedPath(); path != "" {
 		m.addProject.ClearSelection()
-		p, err := config.AddProject(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error adding project: %v\n", err)
-			m.state = ViewProjectList
-			return m, nil
-		}
-		m.projects = append(m.projects, p)
 		m.state = ViewProjectList
+		added, err := config.AddProject(path)
+		if err != nil {
+			return m, m.toast.Show(toast.KindError, fmt.Sprintf("Could not add Project: %v", err))
+		}
+		m.projects = append(m.projects, added)
 		setCmd := m.projectList.SetProjects(m.projects)
-		return m, setCmd
+		return m, tea.Batch(setCmd, m.toast.Show(toast.KindInfo, fmt.Sprintf("Added %s", added.Name)))
 	}
 
 	return m, cmd
