@@ -280,6 +280,33 @@ func (m Model) ActiveSessions() map[string]bool {
 	return m.activeSessions
 }
 
+// VisibleItems returns the items the list is currently showing, after both the
+// active-only filter and any fuzzy filter have been applied.
+func (m Model) VisibleItems() []list.Item {
+	return m.list.VisibleItems()
+}
+
+// Agents returns the per-project agent slices.
+func (m Model) Agents() map[string][]agent.Status {
+	return m.agentsByProj
+}
+
+// AgentsFor returns the agents known for a project ID.
+func (m Model) AgentsFor(projectID string) []agent.Status {
+	return m.agentsByProj[projectID]
+}
+
+// GitStatus returns the per-project git status map.
+func (m Model) GitStatus() map[string]gitstatus.Status {
+	return m.gitByProj
+}
+
+// GitStatusFor returns the git status known for a project ID.
+func (m Model) GitStatusFor(projectID string) (gitstatus.Status, bool) {
+	s, ok := m.gitByProj[projectID]
+	return s, ok
+}
+
 // SetAgents stores the per-project agent slices. The caller should pass
 // urgency-sorted slices; SetAgents re-sorts them here as a safety measure.
 // Per-project focused index is reset to 0 (most urgent) on each call.
