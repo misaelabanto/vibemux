@@ -20,7 +20,7 @@ Four sites are affected, plus one error that is dropped on the floor:
 
 `main.go` also writes to stderr, but the TUI is not running at those points, so those writes are correct and stay as they are.
 
-The multiplexer backends set `cmd.Stderr = os.Stderr` on their attach commands (`internal/tmux/tmux.go:62`, `internal/zellij/zellij.go:208`). This is **not** a corruption source: bubbletea's `ExecProcess` releases the terminal for the duration of the child process, so nothing is rendering while the child owns stderr. Those lines stay as they are.
+Both multiplexers set `cmd.Stderr = os.Stderr` on their attach commands (`internal/tmux/tmux.go:62`, `internal/zellij/zellij.go:208`). This is **not** a corruption source: bubbletea's `ExecProcess` releases the terminal for the duration of the child process, so nothing is rendering while the child owns stderr. Those lines stay as they are.
 
 ## Solution
 
@@ -116,7 +116,7 @@ Each in-TUI stderr write is replaced by a toast.
 1. **Build before saving.** `mux.New` runs first; settings are saved only after it succeeds. Otherwise a Kind that fails to initialize is persisted, and the next launch dies at `main.go:123` with `os.Exit(1)` and the exact stderr write this spec exists to remove.
 2. **Reset the onboarding choice.** `onboarding.Model.hasChosen` is sticky and has no reset. Staying in `ViewOnboarding` after a failure means every subsequent keypress and tick re-enters the `Chosen()` branch, re-calls `mux.New`, and re-raises the toast forever. A `ClearChoice()` method is added to the onboarding model and called on failure.
 
-Worth noting: `mux.New` (`internal/mux/registry.go`) only errors on an unrecognized Kind, and onboarding only offers Kinds from the installed set, so this branch is effectively unreachable today. The two changes are cheap and keep it from becoming a live infinite loop if a backend later grows a fallible constructor.
+Worth noting: `mux.New` (`internal/mux/registry.go`) only errors on an unrecognized Kind, and onboarding only offers Kinds from the installed set, so this branch is effectively unreachable today. The two changes are cheap and keep it from becoming a live infinite loop if a multiplexer later grows a fallible constructor.
 
 ### Confirmations
 
@@ -156,7 +156,7 @@ So the stat happens inside the branch that creates a Session, and `openProject` 
 
 The pre-check turns one failure mode into a real sentence. Every other tmux failure (server will not start, bad config, permissions) still yields `exit status 1`, because `tmux.Backend.NewSession` (`internal/tmux/tmux.go:50-52`) calls bare `.Run()` and discards the child's stderr.
 
-zellij already solves this: its `run` helper (`internal/zellij/zellij.go:85-95`) captures stderr and wraps it into the returned error. The tmux package gets the same helper, and `NewSession` uses it. Without this, the "useful messages" half of this change only holds for one failure mode of one backend.
+zellij already solves this: its `run` helper (`internal/zellij/zellij.go:85-95`) captures stderr and wraps it into the returned error. The tmux package gets the same helper, and `NewSession` uses it. Without this, the "useful messages" half of this change only holds for one failure mode of one multiplexer.
 
 ## Testing
 
