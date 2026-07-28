@@ -30,7 +30,7 @@ func TestMatchingExpiryClears(t *testing.T) {
 	model := New()
 	model.Show(KindError, "boom")
 
-	model, _ = model.Update(ExpiredMsg{Seq: model.seq})
+	model = model.Update(ExpiredMsg{Seq: model.seq})
 	if model.Visible() {
 		t.Error("Visible() = true after a matching ExpiredMsg, want false")
 	}
@@ -45,7 +45,7 @@ func TestStaleExpiryLeavesNewerToast(t *testing.T) {
 	staleSeq := model.seq
 	model.Show(KindInfo, "second")
 
-	model, _ = model.Update(ExpiredMsg{Seq: staleSeq})
+	model = model.Update(ExpiredMsg{Seq: staleSeq})
 	if !model.Visible() {
 		t.Fatal("Visible() = false, the stale timer wiped the newer toast")
 	}
@@ -58,7 +58,7 @@ func TestKeyPressClears(t *testing.T) {
 	model := New()
 	model.Show(KindInfo, "hello")
 
-	model, _ = model.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
+	model = model.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
 	if model.Visible() {
 		t.Error("Visible() = true after a key press, want false")
 	}

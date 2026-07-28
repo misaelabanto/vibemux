@@ -79,11 +79,14 @@ func (m *Model) Show(kind Kind, text string) tea.Cmd {
 	})
 }
 
-// Update clears the toast on its own expiry or on any key press.
+// Update clears the toast on its own expiry or on any key press. It returns
+// only Model, not a tea.Cmd, because it never produces one: Show is the sole
+// source of commands, and returning a value this function can never populate
+// would just invite a caller to silently drop it.
 //
 // A key press dismisses the toast but is never reported as handled: the toast
 // has no focus, so every binding underneath it keeps working.
-func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) Model {
 	switch msg := msg.(type) {
 	case ExpiredMsg:
 		if msg.Seq == m.seq {
@@ -92,7 +95,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		m.visible = false
 	}
-	return m, nil
+	return m
 }
 
 // Visible reports whether a toast is currently on screen.
