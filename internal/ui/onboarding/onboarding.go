@@ -136,6 +136,14 @@ func (m Model) Chosen() (mux.Kind, bool) {
 	return m.chosen, m.hasChosen
 }
 
+// ClearChoice puts the model back into a choosable state. The caller uses this
+// when it could not act on the chosen multiplexer: without it the sticky
+// hasChosen flag makes every later message replay the same failing path.
+func (m *Model) ClearChoice() {
+	m.chosen = ""
+	m.hasChosen = false
+}
+
 // Quit reports that the user abandoned onboarding without choosing.
 func (m Model) Quit() bool { return m.quit }
 

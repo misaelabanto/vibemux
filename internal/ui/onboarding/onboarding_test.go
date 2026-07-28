@@ -75,3 +75,23 @@ func TestInstallHint(t *testing.T) {
 		t.Errorf("installHint(tmux, linux) = %q, want it to mention tmux", got)
 	}
 }
+
+// TestClearChoiceAllowsRetry verifies onboarding can be put back into a
+// choosable state. AppModel needs this when building the chosen multiplexer
+// fails: it stays in onboarding to show the error, and without a reset the
+// sticky hasChosen flag would re-trigger the same failing path on every
+// subsequent message.
+func TestClearChoiceAllowsRetry(t *testing.T) {
+	m := New([]mux.Kind{mux.Tmux, mux.Zellij})
+	m, _ = m.Update(enter())
+
+	if _, chosen := m.Chosen(); !chosen {
+		t.Fatal("Chosen() reported false after pressing enter; test setup is wrong")
+	}
+
+	m.ClearChoice()
+
+	if _, chosen := m.Chosen(); chosen {
+		t.Error("Chosen() = true after ClearChoice, want false")
+	}
+}
