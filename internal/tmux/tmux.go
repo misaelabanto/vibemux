@@ -81,7 +81,7 @@ func (Backend) AttachCommand(name string) *exec.Cmd {
 
 // KillSession destroys the named tmux session.
 func (Backend) KillSession(name string) error {
-	return exec.Command("tmux", "kill-session", "-t", exactTarget(name)).Run()
+	return run(exec.Command("tmux", "kill-session", "-t", exactTarget(name)))
 }
 
 // ListVibemuxSessions returns a set of active tmux session names that have the

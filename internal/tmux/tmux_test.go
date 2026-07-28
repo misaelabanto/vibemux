@@ -80,3 +80,25 @@ func TestRunSucceedsQuietly(t *testing.T) {
 		t.Errorf("run(true) = %v, want nil", err)
 	}
 }
+
+// TestKillSessionFailureCarriesStderr verifies KillSession routes through the
+// run() helper like NewSession does. Kill failures are now surfaced to the
+// user in a toast (internal/app/update.go), so a bare "exit status 1" with no
+// stderr folded in would be exactly the useless message this whole change
+// exists to eliminate.
+func TestKillSessionFailureCarriesStderr(t *testing.T) {
+	if !b.IsInstalled() {
+		t.Skip("tmux not installed")
+	}
+
+	const missing = "vmx-pfxtest-does-not-exist"
+	_ = exec.Command("tmux", "kill-session", "-t", "="+missing).Run()
+
+	err := b.KillSession(missing)
+	if err == nil {
+		t.Fatal("KillSession on a nonexistent session returned nil error")
+	}
+	if err.Error() == "exit status 1" {
+		t.Errorf("err = %q, want it to carry the child's stderr, not just the bare exit status", err.Error())
+	}
+}
