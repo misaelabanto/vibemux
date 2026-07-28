@@ -30,7 +30,12 @@ func initRepo(t *testing.T) string {
 		}
 	}
 
-	run("init")
+	// -b main pins the initial branch name. Without it the branch depends on
+	// the developer's init.defaultBranch, which is unset on many machines and
+	// yields "master". TestConflict merges "main" by name, and its merge
+	// failure is swallowed, so the wrong branch name turned into two confusing
+	// assertion failures rather than an error naming the missing branch.
+	run("init", "-b", "main")
 	run("config", "user.email", "test@example.com")
 	run("config", "user.name", "Test User")
 
