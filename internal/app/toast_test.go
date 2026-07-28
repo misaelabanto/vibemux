@@ -56,11 +56,11 @@ func TestViewWithoutToastIsUnchanged(t *testing.T) {
 // TestKeyPressReachesToastThroughAppUpdate verifies that AppModel.Update
 // forwards key presses to the toast at all: showing a toast and then
 // delivering a key press through the top-level Update clears it, the same
-// way toast.Model.Update does on its own. The real ordering guarantee this
-// task cares about, that a keypress which raises a toast must not be the
-// same keypress that dismisses it, cannot be exercised yet because no
-// production code calls Show; that gets covered once a later task wires
-// Show into an actual handler.
+// way toast.Model.Update does on its own. The real ordering guarantee, that a
+// keypress which raises a toast must not be the same keypress that dismisses
+// it, is exercised by TestKillSessionThroughAppUpdateToastSurvivesOwnKeystroke
+// below, which drives an actual production handler through this same
+// top-level Update.
 func TestKeyPressReachesToastThroughAppUpdate(t *testing.T) {
 	tempXDGDir(t)
 	model := NewAppModel(nil, newFakeMux(), nil, "")
@@ -151,9 +151,9 @@ func TestOpenMissingDirectoryDoesNotTouchProject(t *testing.T) {
 
 // TestOpenMissingDirectoryWithLiveSessionStillAttaches verifies the pre-check
 // gates Session creation only. When a Session is already alive its process is
-// running on the multiplexer server, and the user may need to reach whatever
-// is inside it. Blocking that would prevent recovery without preventing any
-// failure, since attaching does not touch the missing path.
+// still alive on the multiplexer server, and the user may need to reach
+// whatever is inside it. Blocking that would prevent recovery without
+// preventing any failure, since attaching does not touch the missing path.
 func TestOpenMissingDirectoryWithLiveSessionStillAttaches(t *testing.T) {
 	tempXDGDir(t)
 	fake := newFakeMux()
@@ -266,6 +266,30 @@ func TestKillSessionOnActiveProjectConfirms(t *testing.T) {
 	}
 	if !result.toast.Visible() {
 		t.Error("no confirmation toast after killing a live Session")
+	}
+}
+
+// TestKillSessionThroughAppUpdateToastSurvivesOwnKeystroke drives the full
+// AppModel.Update (not updateProjectList) with the ctrl+x keystroke that both
+// raises the confirmation toast and, if forwarding ran after dispatch instead
+// of before, would immediately dismiss it. Every other handler test in this
+// file calls updateProjectList directly, which bypasses the top-level Update
+// where the forward-then-dispatch ordering actually lives (update.go:34-40),
+// so this is the test that exercises that ordering guarantee end to end.
+func TestKillSessionThroughAppUpdateToastSurvivesOwnKeystroke(t *testing.T) {
+	tempXDGDir(t)
+	fake := newFakeMux()
+	dir := t.TempDir()
+	project := model.Project{ID: "p1", Name: "proj", Path: dir}
+	fake.sessions[fake.SessionName(dir)] = true
+
+	appModel := NewAppModel([]model.Project{project}, fake, nil, "")
+
+	updated, _ := appModel.Update(tea.KeyPressMsg{Code: 'x', Mod: tea.ModCtrl})
+
+	result := updated.(AppModel)
+	if !result.toast.Visible() {
+		t.Fatal("confirmation toast not visible after ctrl+x through the full AppModel.Update; the keystroke that raised it dismissed it")
 	}
 }
 

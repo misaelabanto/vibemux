@@ -315,7 +315,7 @@ func (m AppModel) openProject(p model.Project) (tea.Model, tea.Cmd) {
 	name := m.mux.SessionName(p.Path)
 
 	// The directory is only checked when a Session has to be created. An
-	// existing Session is already running on the multiplexer server and
+	// existing Session is already alive on the multiplexer server and
 	// attaching to it does not touch the path, so a Project whose directory
 	// was deleted can still be reached to recover whatever is inside it.
 	if !m.mux.HasSession(name) {
