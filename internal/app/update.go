@@ -36,7 +36,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// would never deliver ExpiredMsg. And the toast clears on any key press:
 	// if the keystroke reached the toast after a handler called Show, every
 	// confirmation toast would be dismissed by the key that raised it.
-	m.toast, _ = m.toast.Update(msg)
+	m.toast = m.toast.Update(msg)
 
 	switch msg := msg.(type) {
 	case MultiplexerReturnedMsg:

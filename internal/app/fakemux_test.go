@@ -2,7 +2,7 @@ package app
 
 import (
 	"os/exec"
-	"strings"
+	"path/filepath"
 )
 
 // fakeMux is a mux.Multiplexer that records what it was asked to do instead of
@@ -25,12 +25,15 @@ func newFakeMux() *fakeMux {
 func (f *fakeMux) Name() string      { return "fakemux" }
 func (f *fakeMux) IsInstalled() bool { return f.installed }
 
+// SessionName mirrors internal/tmux.Backend.SessionName exactly, including
+// its empty/"."/"/" edge cases, so a test asserting against fakeMux proves
+// something the real backends also do.
 func (f *fakeMux) SessionName(projectPath string) string {
-	trimmed := strings.TrimSuffix(projectPath, "/")
-	if idx := strings.LastIndex(trimmed, "/"); idx >= 0 {
-		trimmed = trimmed[idx+1:]
+	base := filepath.Base(filepath.Clean(projectPath))
+	if base == "" || base == "." || base == "/" {
+		return "vmx-unknown"
 	}
-	return "vmx-" + trimmed
+	return "vmx-" + base
 }
 
 func (f *fakeMux) HasSession(name string) bool { return f.sessions[name] }

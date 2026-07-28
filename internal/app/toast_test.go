@@ -26,7 +26,12 @@ func TestViewCompositesToastOverContent(t *testing.T) {
 }
 
 // TestViewWithoutToastIsUnchanged verifies compositing is skipped entirely
-// when nothing is showing, so the normal render path is untouched.
+// when nothing is showing, so the normal render path is untouched. The
+// assertion compares View().Content byte-for-byte against the
+// un-composited projectList.View(), rather than just probing for a border
+// character: a border check would pass even if withToast dropped its
+// visibility guard and started running content through the canvas anyway,
+// since canvas padding or reflow does not necessarily add a "╭".
 func TestViewWithoutToastIsUnchanged(t *testing.T) {
 	tempXDGDir(t)
 	model := NewAppModel(nil, newFakeMux(), nil, "")
@@ -35,16 +40,22 @@ func TestViewWithoutToastIsUnchanged(t *testing.T) {
 	if model.toast.Visible() {
 		t.Fatal("a fresh AppModel must not have a visible toast")
 	}
-	if got := model.View().Content; strings.Contains(got, "╭") {
-		t.Error("view contains a toast border with no toast showing")
+
+	want := model.projectList.View()
+	if got := model.View().Content; got != want {
+		t.Errorf("View().Content differs from the un-composited content with no toast showing:\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
 
-// TestToastSurvivesTheKeyPressThatRaisedIt is the regression guard for
-// forwarding order. The toast clears on any key press, so if forwarding runs
-// after the handler calls Show, every confirmation toast is destroyed by the
-// exact keystroke that raised it and the user never sees one.
-func TestToastSurvivesTheKeyPressThatRaisedIt(t *testing.T) {
+// TestKeyPressReachesToastThroughAppUpdate verifies that AppModel.Update
+// forwards key presses to the toast at all: showing a toast and then
+// delivering a key press through the top-level Update clears it, the same
+// way toast.Model.Update does on its own. The real ordering guarantee this
+// task cares about, that a keypress which raises a toast must not be the
+// same keypress that dismisses it, cannot be exercised yet because no
+// production code calls Show; that gets covered once a later task wires
+// Show into an actual handler.
+func TestKeyPressReachesToastThroughAppUpdate(t *testing.T) {
 	tempXDGDir(t)
 	model := NewAppModel(nil, newFakeMux(), nil, "")
 	model.width, model.height = 80, 24
