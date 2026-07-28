@@ -11,6 +11,7 @@ import (
 	"github.com/misaelabanto/vibemux/internal/ui/addproject"
 	"github.com/misaelabanto/vibemux/internal/ui/onboarding"
 	"github.com/misaelabanto/vibemux/internal/ui/projectlist"
+	"github.com/misaelabanto/vibemux/internal/ui/toast"
 )
 
 type ViewState int
@@ -34,6 +35,7 @@ type AppModel struct {
 	projectList projectlist.Model
 	addProject  addproject.Model
 	onboarding  onboarding.Model
+	toast       toast.Model
 	mux         mux.Multiplexer
 	projects    []model.Project
 	settings    config.Settings
@@ -56,6 +58,7 @@ func NewAppModel(projects []model.Project, active mux.Multiplexer, installed []m
 	m := AppModel{
 		projectList: pl,
 		projects:    projects,
+		toast:       toast.New(),
 		mux:         active,
 		settings:    settings,
 		scopeDir:    scopeDir,

@@ -31,6 +31,13 @@ func (m AppModel) Init() tea.Cmd {
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Forwarded before anything else, for two reasons. The switch below
+	// returns early for several message types, so forwarding placed after it
+	// would never deliver ExpiredMsg. And the toast clears on any key press:
+	// if the keystroke reached the toast after a handler called Show, every
+	// confirmation toast would be dismissed by the key that raised it.
+	m.toast, _ = m.toast.Update(msg)
+
 	switch msg := msg.(type) {
 	case MultiplexerReturnedMsg:
 		// User detached or the session ended: return to project list. Reapply the
