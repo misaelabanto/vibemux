@@ -89,6 +89,35 @@ func TestRenderTinyWidthDoesNotAutosize(t *testing.T) {
 	}
 }
 
+// TestRenderWidthIsTotalNotInterior pins the lipgloss contract this file
+// depends on: Style.Width sets the total rendered width, border and padding
+// included. If a future lipgloss made Width mean interior width instead, the
+// box would render wider than its budget and overflow the canvas.
+func TestRenderWidthIsTotalNotInterior(t *testing.T) {
+	model := New()
+	model.Show(KindError, "a short message")
+
+	const terminalWidth = 80
+	got := lipgloss.Width(model.Render(terminalWidth))
+	if got != maxBoxWidth {
+		t.Errorf("Render(%d) rendered %d columns, want %d", terminalWidth, got, maxBoxWidth)
+	}
+}
+
+// TestRenderWidthAtMidRangeAppliesMargin covers the plain maxWidth-screenMargin
+// arithmetic on its own, at a width where neither the floor nor the cap binds.
+func TestRenderWidthAtMidRangeAppliesMargin(t *testing.T) {
+	model := New()
+	model.Show(KindError, "a short message")
+
+	const terminalWidth = 40
+	const wantWidth = terminalWidth - screenMargin
+	got := lipgloss.Width(model.Render(terminalWidth))
+	if got != wantWidth {
+		t.Errorf("Render(%d) rendered %d columns, want %d", terminalWidth, got, wantWidth)
+	}
+}
+
 func TestRenderNotVisibleIsEmpty(t *testing.T) {
 	model := New()
 	if out := model.Render(80); out != "" {

@@ -28,13 +28,19 @@ const (
 const lifetime = 4 * time.Second
 
 // Box width bounds. The lower bound is load-bearing: a plain
-// min(maxBoxWidth, maxWidth-borderAndMargin) goes non-positive on a very
-// narrow terminal, and lipgloss treats Width(0) as "size to content", which
-// turns the cap into no cap at all.
+// min(maxBoxWidth, maxWidth-screenMargin) goes non-positive on a very narrow
+// terminal, and lipgloss treats Width(0) as "size to content", which turns
+// the cap into no cap at all.
 const (
-	minBoxWidth      = 20
-	maxBoxWidth      = 60
-	borderAndPadding = 4
+	minBoxWidth = 20
+	maxBoxWidth = 60
+
+	// screenMargin holds the box clear of the screen edges: Task 4 places it
+	// at x = width - boxWidth - 2, so subtracting this from maxWidth leaves a
+	// 2-column gap on each side. lipgloss's Style.Width sets the box's total
+	// rendered width, border and padding included, so this is not reserving
+	// room for them; nothing adds border or padding on top of Width.
+	screenMargin = 4
 )
 
 // ExpiredMsg asks the model to clear the toast identified by Seq. A toast is
@@ -103,7 +109,7 @@ func (m Model) Render(maxWidth int) string {
 		return ""
 	}
 
-	boxWidth := maxWidth - borderAndPadding
+	boxWidth := maxWidth - screenMargin
 	if boxWidth < minBoxWidth {
 		boxWidth = minBoxWidth
 	}
