@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/misaelabanto/vibemux/internal/config"
 	"github.com/misaelabanto/vibemux/internal/model"
@@ -431,5 +432,56 @@ func TestRemoveProjectSaveFailureLeavesProjectInPlace(t *testing.T) {
 	}
 	if len(remaining) != 1 {
 		t.Errorf("LoadProjects() = %v, want the Project still on disk after a failed removal", remaining)
+	}
+}
+
+// TestViewNeverOverflowsTerminal guards the invariant the original bug
+// actually violated: an error was written straight to os.Stderr while the
+// alternate screen was active, and stderr does not know or care how wide or
+// tall the terminal is, so a long message overflowed the frame and tore the
+// rendered output. A frame line wider than the terminal, or a frame with more
+// lines than the terminal is tall, is exactly what that corruption looked
+// like. Now that errors are drawn through withToast's Canvas/Compositor
+// instead, this test asserts the composited frame can never reproduce that
+// shape.
+//
+// The table sweeps down to absurdly small terminals (1x1) on purpose: those
+// degenerate sizes are where the toastX/toastY clamps in withToast and the
+// clipping lipgloss performs while composing the Canvas are most likely to
+// break, so they are the sizes most worth guarding.
+func TestViewNeverOverflowsTerminal(t *testing.T) {
+	tempXDGDir(t)
+
+	longMessage := "error: " + strings.Repeat("overflow ", 40)
+
+	sizes := []struct {
+		width  int
+		height int
+	}{
+		{80, 24},
+		{40, 12},
+		{20, 8},
+		{10, 4},
+		{5, 3},
+		{1, 1},
+	}
+
+	for _, size := range sizes {
+		model := NewAppModel(nil, newFakeMux(), nil, "")
+		model.width, model.height = size.width, size.height
+		model.projectList.SetSize(size.width, size.height)
+		model.toast.Show(toast.KindError, longMessage)
+
+		frame := model.View().Content
+		lines := strings.Split(frame, "\n")
+
+		if len(lines) > size.height {
+			t.Errorf("size %dx%d: frame has %d lines, want at most %d", size.width, size.height, len(lines), size.height)
+		}
+		for lineIndex, line := range lines {
+			if width := lipgloss.Width(line); width > size.width {
+				t.Errorf("size %dx%d: line %d has width %d, want at most %d", size.width, size.height, lineIndex, width, size.width)
+			}
+		}
 	}
 }
