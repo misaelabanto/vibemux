@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,6 +56,66 @@ func TestOwningProjectID_SiblingPrefixNotAncestor(t *testing.T) {
 	if ok {
 		t.Error("expected no match for sibling prefix /a/bc vs cwd /a/b")
 	}
+}
+
+// The case-insensitive tests use real temp directories: matching a path whose
+// casing differs is only allowed when the filesystem confirms both spellings
+// resolve to the same directory, so a fabricated path would never match.
+
+func TestOwningProjectID_CaseInsensitiveFS_ExactMatch(t *testing.T) {
+	realPath := filepath.Join(t.TempDir(), "duosql")
+	if err := os.Mkdir(realPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	swapped := swapCase(t, realPath)
+
+	projects := []model.Project{proj("duosql", swapped)}
+	id, ok := OwningProjectID(realPath, projects)
+	if !ok || id != "duosql" {
+		t.Errorf("expected (duosql, true) for %q vs %q, got (%q, %v)", realPath, swapped, id, ok)
+	}
+}
+
+func TestOwningProjectID_CaseInsensitiveFS_Descendant(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "duosql")
+	nested := filepath.Join(root, "internal", "db")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	projects := []model.Project{proj("duosql", swapCase(t, root))}
+	id, ok := OwningProjectID(nested, projects)
+	if !ok || id != "duosql" {
+		t.Errorf("expected (duosql, true) for descendant %q, got (%q, %v)", nested, id, ok)
+	}
+}
+
+func TestOwningProjectID_CaseDifferenceOnMissingPathDoesNotMatch(t *testing.T) {
+	// Neither path exists, so the filesystem cannot confirm they are the same
+	// directory. Case-folded spellings must not match on faith alone.
+	projects := []model.Project{proj("p1", "/nonexistent-vibemux/Code/app")}
+	_, ok := OwningProjectID("/nonexistent-vibemux/code/app", projects)
+	if ok {
+		t.Error("expected no match when the case-folded paths cannot be verified on disk")
+	}
+}
+
+// swapCase flips the case of the final path element and skips the test when
+// the filesystem is case-sensitive, where the two spellings really are
+// different directories and must not match.
+func swapCase(t *testing.T, path string) string {
+	t.Helper()
+
+	dir, base := filepath.Split(path)
+	swapped := filepath.Join(dir, strings.ToUpper(base[:1])+base[1:])
+	if swapped == path {
+		swapped = filepath.Join(dir, strings.ToLower(base[:1])+base[1:])
+	}
+
+	if _, err := os.Stat(swapped); err != nil {
+		t.Skipf("case-sensitive filesystem: %q does not resolve to %q", swapped, path)
+	}
+	return swapped
 }
 
 func TestOwningProjectID_NoMatch(t *testing.T) {

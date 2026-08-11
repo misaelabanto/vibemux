@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/misaelabanto/vibemux/internal/model"
@@ -37,21 +38,14 @@ func OwningProjectID(cwd string, projects []model.Project) (string, bool) {
 	bestID := ""
 	bestLen := -1
 
-	for _, p := range projects {
-		cleanPath := filepath.Clean(p.Path)
-		if cleanCwd == cleanPath {
-			if len(cleanPath) > bestLen {
-				bestLen = len(cleanPath)
-				bestID = p.ID
-			}
+	for _, project := range projects {
+		cleanPath := filepath.Clean(project.Path)
+		if !isSelfOrDescendant(cleanCwd, cleanPath) {
 			continue
 		}
-		prefix := cleanPath + string(os.PathSeparator)
-		if len(prefix) <= len(cleanCwd) && cleanCwd[:len(prefix)] == prefix {
-			if len(cleanPath) > bestLen {
-				bestLen = len(cleanPath)
-				bestID = p.ID
-			}
+		if len(cleanPath) > bestLen {
+			bestLen = len(cleanPath)
+			bestID = project.ID
 		}
 	}
 
@@ -59,6 +53,46 @@ func OwningProjectID(cwd string, projects []model.Project) (string, bool) {
 		return "", false
 	}
 	return bestID, true
+}
+
+// isSelfOrDescendant reports whether the cleaned path cwd is dir itself or
+// lives underneath it. The separator check keeps /a/bc from being treated as a
+// descendant of /a/b.
+func isSelfOrDescendant(cwd, dir string) bool {
+	if samePath(cwd, dir) {
+		return true
+	}
+	if len(cwd) <= len(dir) || cwd[len(dir)] != os.PathSeparator {
+		return false
+	}
+	return samePath(cwd[:len(dir)], dir)
+}
+
+// samePath reports whether two cleaned paths point at the same directory.
+//
+// A byte-exact match settles the common case without touching the disk. When
+// the two differ only in casing, the filesystem decides: on a case-insensitive
+// volume (macOS, Windows) /Users/x/Code and /Users/x/code are one directory, so
+// a project registered with different casing than the agent's reported cwd must
+// still match. os.SameFile is what confirms it, which keeps two genuinely
+// distinct directories on a case-sensitive volume apart.
+func samePath(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if !strings.EqualFold(a, b) {
+		return false
+	}
+
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(infoA, infoB)
 }
 
 // GroupByProject groups statuses by owning project ID.
