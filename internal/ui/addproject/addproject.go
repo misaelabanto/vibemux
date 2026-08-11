@@ -115,6 +115,14 @@ func (m *Model) loadEntries() {
 	m.cursor = 0
 }
 
+// SetSize records the terminal size. The parent picker sizes its viewport from
+// the height, so without this it falls back to a fixed ten rows and hides
+// subdirectories that would otherwise fit on screen.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+}
+
 func (m Model) Init() tea.Cmd {
 	return nil
 }

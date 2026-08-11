@@ -1,8 +1,10 @@
 package addproject
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -67,5 +69,31 @@ func TestCreateEmptyFallsBackToCurrentDirWhenEmpty(t *testing.T) {
 
 	if model.parentDir != root {
 		t.Errorf("parentDir = %q, want %q", model.parentDir, root)
+	}
+}
+
+// The parent picker must size its viewport from the terminal height it is
+// given, so a tall terminal shows every subdirectory instead of the ten-row
+// fallback used when no size has been received.
+func TestPickerViewportFollowsTerminalHeight(t *testing.T) {
+	root := t.TempDir()
+	const dirCount = 20
+	for i := 0; i < dirCount; i++ {
+		if err := os.Mkdir(filepath.Join(root, fmt.Sprintf("proj%02d", i)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	model := New(root)
+	model.mode = ModePickExisting
+	model.step = stepPickParent
+	model.SetSize(120, 50)
+
+	view := model.View()
+	for i := 0; i < dirCount; i++ {
+		name := fmt.Sprintf("proj%02d", i)
+		if !strings.Contains(view, name) {
+			t.Errorf("%s missing from picker view", name)
+		}
 	}
 }
