@@ -97,6 +97,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.projectList.SetSize(msg.Width, msg.Height)
+		m.addProject.SetSize(msg.Width, msg.Height)
 		return m, nil
 	}
 
@@ -212,6 +213,7 @@ func (m AppModel) updateProjectList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+n":
 				m.state = ViewAddProject
 				m.addProject = addproject.New(m.scopeDir)
+				m.addProject.SetSize(m.width, m.height)
 				return m, m.addProject.Init()
 			case "ctrl+d":
 				if selected, ok := m.projectList.SelectedProject(); ok {

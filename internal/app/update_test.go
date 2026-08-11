@@ -1,9 +1,14 @@
 package app
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/misaelabanto/vibemux/internal/agent"
 	"github.com/misaelabanto/vibemux/internal/config"
@@ -143,5 +148,42 @@ func TestMultiplexerReturnedReappliesScope(t *testing.T) {
 
 	if len(app.projects) != 1 || app.projects[0].ID != "in" {
 		t.Fatalf("after detach, want only scoped project [in], got %+v", app.projects)
+	}
+}
+
+// Opening the add-project flow must hand the picker the current terminal size.
+// Without it the picker falls back to a ten-row viewport and silently hides
+// subdirectories on any taller terminal.
+func TestAddProjectPickerGetsTerminalSize(t *testing.T) {
+	scopeDir := t.TempDir()
+	const dirCount = 20
+	for i := 0; i < dirCount; i++ {
+		if err := os.Mkdir(filepath.Join(scopeDir, fmt.Sprintf("proj%02d", i)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	model := NewAppModel(nil, newFakeMux(), nil, scopeDir)
+	model.state = ViewProjectList
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 50})
+	appModel := updated.(AppModel)
+	updated, _ = appModel.Update(tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl})
+	appModel = updated.(AppModel)
+
+	if appModel.state != ViewAddProject {
+		t.Fatalf("state = %v, want ViewAddProject", appModel.state)
+	}
+
+	// Step past the mode menu so the parent picker is what renders.
+	updated, _ = appModel.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	appModel = updated.(AppModel)
+
+	view := appModel.View().Content
+	for i := 0; i < dirCount; i++ {
+		name := fmt.Sprintf("proj%02d", i)
+		if !strings.Contains(view, name) {
+			t.Errorf("%s missing from picker view on a 50-row terminal", name)
+		}
 	}
 }
