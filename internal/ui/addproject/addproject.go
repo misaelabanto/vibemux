@@ -82,7 +82,11 @@ func New(startDir string) Model {
 		home, _ := os.UserHomeDir()
 		startDir = home
 
-		preferredDirs := []string{"Code", "code", "Projects", "projects"}
+		// "Code" is last because os.Stat succeeds on a case-insensitive
+		// filesystem regardless of how the folder is really spelled: probing it
+		// first made a lowercase ~/code report itself as ~/Code, and stored new
+		// projects under that miscased path.
+		preferredDirs := []string{"code", "Projects", "projects", "Code"}
 		for _, dir := range preferredDirs {
 			candidate := filepath.Join(home, dir)
 			if info, err := os.Stat(candidate); err == nil && info.IsDir() {

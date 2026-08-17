@@ -97,3 +97,19 @@ func TestPickerViewportFollowsTerminalHeight(t *testing.T) {
 		}
 	}
 }
+
+func TestNewPrefersRealCasingOfHomeCodeDir(t *testing.T) {
+	// os.Stat succeeds for any casing on a case-insensitive filesystem, so
+	// probing "Code" before "code" used to report a lowercase ~/code as ~/Code
+	// and store new projects under that miscased path.
+	home := t.TempDir()
+	realDir := filepath.Join(home, "code")
+	if err := os.Mkdir(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	if got := New("").currentDir; got != realDir {
+		t.Errorf("expected picker to start at %q, got %q", realDir, got)
+	}
+}
