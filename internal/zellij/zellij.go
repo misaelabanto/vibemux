@@ -1,12 +1,14 @@
 package zellij
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const sessionPrefix = "vmx-"
@@ -70,13 +72,50 @@ func socketDir() string {
 	return filepath.Join("/tmp", "zellij-"+strconv.Itoa(os.Getuid()))
 }
 
-// command builds an *exec.Cmd for the resolved zellij binary. Every zellij
-// invocation shares one socket dir so that sessions created by vibemux are the
-// same ones it lists, attaches to, and kills.
+// controlTimeout bounds every short-lived zellij control command: listing,
+// creating and killing sessions.
+//
+// A zellij server can wedge in a state where it still accepts connections on
+// its session socket but never answers them, and a client talking to it then
+// blocks forever. vibemux runs these commands from its status sweep every few
+// seconds and synchronously from key handlers, so one dead server used to
+// freeze the entire UI with no way out, not even ctrl+c. Bounding them turns
+// that permanent freeze into a brief stall that the next sweep recovers from.
+//
+// Attaching is deliberately not bounded: an attached session is long-lived by
+// nature and its command is handed to bubbletea, not run here.
+// It is a var so tests can shrink it.
+var controlTimeout = 5 * time.Second
+
+// killGrace is how long a timed-out command may take to release its output
+// pipes after the context kills it. Without a WaitDelay, Run and Output wait
+// on the pipes rather than on the process, so a grandchild that inherited them
+// would reintroduce the very hang the timeout exists to prevent.
+const killGrace = time.Second
+
+// commandEnv is the environment every zellij invocation runs under. They all
+// share one socket dir so that sessions created by vibemux are the same ones
+// it lists, attaches to, and kills.
+func commandEnv() []string {
+	return append(os.Environ(), "ZELLIJ_SOCKET_DIR="+socketDir())
+}
+
+// command builds an unbounded *exec.Cmd for the resolved zellij binary. Only
+// AttachCommand should use it; everything else goes through controlCommand.
 func command(args ...string) *exec.Cmd {
 	cmd := exec.Command(binaryPath(), args...)
-	cmd.Env = append(os.Environ(), "ZELLIJ_SOCKET_DIR="+socketDir())
+	cmd.Env = commandEnv()
 	return cmd
+}
+
+// controlCommand builds a zellij command bounded by controlTimeout. The
+// returned cancel must be called once the command has finished.
+func controlCommand(args ...string) (*exec.Cmd, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), controlTimeout)
+	cmd := exec.CommandContext(ctx, binaryPath(), args...)
+	cmd.Env = commandEnv()
+	cmd.WaitDelay = killGrace
+	return cmd, cancel
 }
 
 // run executes cmd and, on failure, wraps the exit error with whatever zellij
@@ -104,9 +143,12 @@ func (Backend) IsInstalled() bool {
 // (dead but resurrectable) sessions indistinguishably, so this parses the
 // output and drops EXITED lines.
 func liveSessions() map[string]bool {
-	out, err := command("list-sessions", "-n").Output()
+	cmd, cancel := controlCommand("list-sessions", "-n")
+	defer cancel()
+	out, err := cmd.Output()
 	if err != nil {
-		// zellij exits non-zero when no sessions exist; treat as empty.
+		// zellij exits non-zero when no sessions exist, and a timed-out command
+		// also lands here; both mean "nothing usable to report", so treat as empty.
 		return map[string]bool{}
 	}
 
@@ -150,8 +192,12 @@ func (Backend) NewSession(name, dir string) error {
 	if err != nil {
 		return err
 	}
-	_ = command("delete-session", "--force", name).Run()
-	cmd := command("--config", cfg, "attach", "--create-background", name, "options", "--default-cwd", dir)
+	deleteCmd, cancelDelete := controlCommand("delete-session", "--force", name)
+	_ = deleteCmd.Run()
+	cancelDelete()
+
+	cmd, cancel := controlCommand("--config", cfg, "attach", "--create-background", name, "options", "--default-cwd", dir)
+	defer cancel()
 	cmd.Dir = dir
 	return run(cmd)
 }
@@ -162,7 +208,9 @@ func (Backend) NewSession(name, dir string) error {
 // XDG_CONFIG_HOME). Returns "" when it cannot be determined; the reported file
 // may not exist.
 func effectiveConfigPath() string {
-	out, err := command("setup", "--check").Output()
+	cmd, cancel := controlCommand("setup", "--check")
+	defer cancel()
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
@@ -214,8 +262,14 @@ func (Backend) AttachCommand(name string) *exec.Cmd {
 // session is also deleted, best effort, to match tmux semantics where a
 // killed session is gone.
 func (Backend) KillSession(name string) error {
-	err := run(command("kill-session", name))
-	_ = command("delete-session", "--force", name).Run()
+	killCmd, cancelKill := controlCommand("kill-session", name)
+	err := run(killCmd)
+	cancelKill()
+
+	deleteCmd, cancelDelete := controlCommand("delete-session", "--force", name)
+	_ = deleteCmd.Run()
+	cancelDelete()
+
 	return err
 }
 
